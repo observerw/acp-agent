@@ -7,10 +7,19 @@ authors = [
     { name = "observerw", email = "wozluohd@gmail.com" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "anyio>=4.12.1",
+    "attrs>=25.4.0",
+    "cyclopts>=4.5.1",
+    "httpx>=0.28.1",
+    "httpx-ws>=0.8.2",
+    "litestar>=2.19.0",
+    "loguru>=0.7.3",
+    "pydantic>=2.12.5",
+]
 
 [project.scripts]
-acp-agent = "acp_agent:main"
+acp-agent = "acp_agent.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.9.9,<0.10.0"]
