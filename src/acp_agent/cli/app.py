@@ -1,28 +1,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Final
 
 from cyclopts import App, Parameter
 from loguru import logger
+from rich.console import Console
 
 from ..executor import run_local
+from ..registry import list_agents
+from .utils import display_agents_table, parse_env
 
 app = App()
-
-
-def _parse_env(env_list: list[str] | None) -> dict[str, str]:
-    if not env_list:
-        return {}
-
-    env_dict = {}
-    for item in env_list:
-        if "=" not in item:
-            msg = f"Invalid environment variable format '{item}'. Expected KEY=VAL."
-            raise ValueError(msg)
-        key, val = item.split("=", 1)
-        env_dict[key] = val
-    return env_dict
+console: Final = Console()
 
 
 @app.command
@@ -53,15 +43,12 @@ async def run(
     extra_args
         Additional arguments to pass to the agent.
     """
+
     try:
-        env_dict = _parse_env(env)
+        env_dict = parse_env(env)
     except ValueError as e:
         logger.error(str(e))
         raise SystemExit(1) from e
-
-    if cwd and not cwd.exists():
-        logger.error("Working directory '{}' does not exist.", cwd)
-        raise SystemExit(1)
 
     await run_local(
         agent_id,
@@ -69,6 +56,49 @@ async def run(
         env=env_dict,
         cwd=cwd,
         cache_path=cache_path,
+    )
+
+
+@app.command(name="list")
+async def list_agents_cmd() -> None:
+    """List all available agents from the registry."""
+    agents = await list_agents()
+    display_agents_table(
+        agents,
+        "Available Agents",
+        console=console,
+    )
+
+
+@app.command
+async def search(query: str) -> None:
+    """Search for agents in the registry by name or ID.
+
+    Parameters
+    ----------
+    query
+        The search string (fuzzy/substring match).
+    """
+
+    agents = await list_agents()
+    query = query.lower()
+    filtered_agents = [
+        agent
+        for agent in agents
+        if query in agent.name.lower()  #
+        or query in agent.id.lower()
+    ]
+
+    if not filtered_agents:
+        console.print(
+            f"[yellow]No agents found matching '[bold]{query}[/bold]'.[/yellow]"
+        )
+        return
+
+    display_agents_table(
+        filtered_agents,
+        f"Search Results for '{query}'",
+        console=console,
     )
 
 

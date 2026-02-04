@@ -16,6 +16,7 @@ dependencies = [
     "litestar>=2.19.0",
     "loguru>=0.7.3",
     "pydantic>=2.12.5",
+    "rich>=14.3.2",
 ]
 
 [project.scripts]

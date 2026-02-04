@@ -15,6 +15,7 @@ dependencies = [
     { name = "litestar" },
     { name = "loguru" },
     { name = "pydantic" },
+    { name = "rich" },
 ]
 
 [package.metadata]
@@ -27,6 +28,7 @@ requires-dist = [
     { name = "litestar", specifier = ">=2.19.0" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "pydantic", specifier = ">=2.12.5" },
+    { name = "rich", specifier = ">=14.3.2" },
 ]
 
 [[package]]
