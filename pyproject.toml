@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
-acp-agent = "acp_agent.cli:main"
+acp-agent = "acp_agent.cli:app"
 
 [build-system]
 requires = ["uv_build>=0.9.9,<0.10.0"]
