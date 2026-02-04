@@ -11,6 +11,7 @@ from loguru import logger
 
 from .exceptions import AgentNotFoundError, DistributionError, RunnerNotFoundError
 from .models import BinaryDistribution, NpxDistribution, UvxDistribution
+from .registry import fetch_agent
 
 
 async def run_local(
@@ -22,7 +23,6 @@ async def run_local(
     cache_path: Path | None = None,
 ) -> None:
     """Run an agent locally by its ID."""
-    from .registry import fetch_agent
 
     agent = await fetch_agent(id)
     if not agent:
@@ -107,12 +107,29 @@ async def execute_binary(
     if not binary_path.exists():
         logger.info("Downloading binary from {} to {}", dist.archive, binary_path)
         downloader = _find_runner(["curl", "wget"])
-        if downloader == "curl":
-            await anyio.run_process(
-                ["curl", "-L", "-o", str(binary_path), dist.archive]
-            )
-        else:
-            await anyio.run_process(["wget", "-O", str(binary_path), dist.archive])
+
+        # Use a temporary file for the download to handle zip/tar extraction
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=Path(dist.archive).suffix) as tmp:
+            if downloader == "curl":
+                await anyio.run_process(["curl", "-L", "-o", tmp.name, dist.archive])
+            else:
+                await anyio.run_process(["wget", "-O", tmp.name, dist.archive])
+
+            if dist.archive.endswith(".zip"):
+                import zipfile
+
+                with zipfile.ZipFile(tmp.name, "r") as zip_ref:
+                    # Extract the specific command binary
+                    zip_ref.extract(Path(dist.cmd).name, path=cache_path)
+            elif dist.archive.endswith((".tar.gz", ".tgz")):
+                import tarfile
+
+                with tarfile.open(tmp.name, "r:gz") as tar_ref:
+                    tar_ref.extract(Path(dist.cmd).name, path=cache_path)
+            else:
+                shutil.copy(tmp.name, binary_path)
 
         binary_path.chmod(0o755)
 
@@ -127,9 +144,9 @@ def _get_platform_key() -> str:
     machine = platform.machine().lower()
 
     if machine in ("x86_64", "amd64"):
-        arch = "x64"
+        arch = "x86_64"
     elif machine in ("arm64", "aarch64"):
-        arch = "arm64"
+        arch = "aarch64"
     else:
         arch = machine
 
