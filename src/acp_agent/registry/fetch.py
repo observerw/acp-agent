@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import httpx
 
-from .models import Registry, RegistryAgent
+from .model import Registry, RegistryAgent
 
 REGISTRY_URL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json"
 

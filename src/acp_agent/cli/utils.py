@@ -3,7 +3,7 @@ from __future__ import annotations
 from rich.console import Console
 from rich.table import Table
 
-from ..models import RegistryAgent
+from acp_agent.registry import RegistryAgent
 
 
 def parse_env(env_list: list[str] | None) -> dict[str, str]:

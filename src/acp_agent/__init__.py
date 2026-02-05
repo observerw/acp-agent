@@ -1,15 +1,9 @@
 from __future__ import annotations
 
-from .executor import run_local, run_local_attached
-from .models import Registry, RegistryAgent
-from .registry import fetch_agent, fetch_registry, list_agents
+from .spawn import AgentStream, run_local, run_local_attached
 
 __all__ = [
-    "Registry",
-    "RegistryAgent",
-    "fetch_agent",
-    "fetch_registry",
-    "list_agents",
+    "AgentStream",
     "run_local",
     "run_local_attached",
 ]

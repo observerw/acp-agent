@@ -7,8 +7,8 @@ from cyclopts import App, Parameter
 from loguru import logger
 from rich.console import Console
 
-from acp_agent.executor import run_local_attached
-from acp_agent.registry import list_agents
+from acp_agent.registry.fetch import list_agents
+from acp_agent.spawn import run_local_attached
 
 from .utils import display_agents_table, parse_env
 

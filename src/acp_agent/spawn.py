@@ -14,8 +14,8 @@ from acp_agent.utils.platform import get_platform_key
 from acp_agent.utils.sh import available_programs
 
 from .exceptions import AgentNotFoundError, DistributionError
-from .models import BinaryDistribution, NpxDistribution, UvxDistribution
 from .registry import fetch_agent
+from .registry.model import BinaryDistribution, NpxDistribution, UvxDistribution
 
 
 class AgentStreamParams(TypedDict):
@@ -121,7 +121,7 @@ async def _resolve_agent_command(
         msg = f"Agent with ID '{id}' not found in registry."
         raise AgentNotFoundError(msg)
 
-    dist = agent.distribution
+    dist = agent.dist_union
 
     if dist.npx:
         return await _prepare_npx(
