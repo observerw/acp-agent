@@ -7,7 +7,7 @@ from cyclopts import App, Parameter
 from loguru import logger
 from rich.console import Console
 
-from acp_agent.executor import run_local
+from acp_agent.executor import run_local_attached
 from acp_agent.registry import list_agents
 
 from .utils import display_agents_table, parse_env
@@ -51,13 +51,14 @@ async def run(
         logger.error(str(e))
         raise SystemExit(1) from e
 
-    await run_local(
+    exit_code = await run_local_attached(
         agent_id,
         extra_args=extra_args,
         env=env_dict,
         cwd=cwd,
         cache_path=cache_path,
     )
+    raise SystemExit(exit_code)
 
 
 @app.command(name="list")
