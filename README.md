@@ -1,5 +1,9 @@
 # ACP Agent CLI 🚀
 
+[![PyPI version](https://img.shields.io/pypi/v/acp-agent.svg)](https://pypi.org/project/acp-agent/)
+[![Python versions](https://img.shields.io/pypi/pyversions/acp-agent.svg)](https://pypi.org/project/acp-agent/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 This project provides a friendly and intuitive Command Line Interface (CLI) for the [ACP Registry](https://github.com/agentclientprotocol/registry), enabling developers to quickly browse, search, and run ACP (Agent Client Protocol) agents locally.
 
 ## Motivation 💡
