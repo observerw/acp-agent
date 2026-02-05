@@ -91,7 +91,6 @@ class RegistryAgent(BaseModel):
                 platform_key = get_platform_key()
                 if binary_distro := binaries.get(platform_key):
                     return binary_distro
-
                 raise ValueError(
                     f"No binary distribution found for platform '{platform_key}' "
                 )
