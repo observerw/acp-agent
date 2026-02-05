@@ -154,8 +154,15 @@ async def _prepare_npx(
     cwd: str | Path | None = None,
     **kwargs,
 ) -> AgentCommand:
-    tool = await available_programs("bunx", "npx")
-    cmd = [tool, dist.package, *dist.args, *extra_args]
+    args = [dist.package, *dist.args, *extra_args]
+    match await available_programs("bunx", "npx"):
+        case "bunx":
+            cmd = ["bunx", *args]
+        case "npx":
+            cmd = ["npx", "-y", *args]
+        case _:
+            assert False
+
     full_env = {**os.environ, **dist.env, **(env or {})}
 
     logger.debug("Preparing command: {}", cmd)
@@ -171,15 +178,18 @@ async def _prepare_uvx(
     python_version: str = "3.12",
     **kwargs,
 ) -> AgentCommand:
-    tool = await available_programs("uvx", "pip")
-    if tool == "uvx":
-        cmd = ["uvx", "--python", python_version, dist.package, *dist.args, *extra_args]
-    else:
-        logger.warning(
-            "Using pip as fallback for uvx. This will install the package globally or in the current env."
-        )
-        await run_process(["python", "-m", "pip", "install", dist.package])
-        cmd = [dist.package, *dist.args, *extra_args]
+    args = [dist.package, *dist.args, *extra_args]
+    match await available_programs("uvx", "pip", "pip3"):
+        case "uvx":
+            cmd = ["uvx", "--python", python_version, *args]
+        case "pip" | "pip3":
+            logger.warning(
+                "Using pip as fallback for uvx. This will install the package globally or in the current env."
+            )
+            await run_process(["python", "-m", "pip", "install", dist.package])
+            cmd = [*args]
+        case _:
+            assert False
 
     full_env = {**os.environ, **dist.env, **(env or {})}
     logger.debug("Preparing command: {}", cmd)
@@ -208,10 +218,13 @@ async def _prepare_binary(
         import tempfile
 
         with tempfile.NamedTemporaryFile(suffix=Path(dist.archive).suffix) as tmp:
-            if downloader == "curl":
-                await run_process(["curl", "-L", "-o", tmp.name, dist.archive])
-            else:
-                await run_process(["wget", "-O", tmp.name, dist.archive])
+            match downloader:
+                case "curl":
+                    await run_process(["curl", "-L", "-o", tmp.name, dist.archive])
+                case "wget":
+                    await run_process(["wget", "-O", tmp.name, dist.archive])
+                case _:
+                    assert False
 
             if dist.archive.endswith(".zip"):
                 import zipfile
