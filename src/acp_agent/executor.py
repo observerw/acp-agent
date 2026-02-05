@@ -6,7 +6,7 @@ import shutil
 from asyncio import StreamReader, StreamWriter
 from collections.abc import Sequence
 from pathlib import Path
-from typing import NamedTuple, TypedDict
+from typing import Any, NamedTuple, TypedDict
 
 from loguru import logger
 
@@ -84,7 +84,7 @@ async def run_local(
     extra_args: Sequence[str] = (),
     env: dict[str, str] | None = None,
     cwd: str | Path | None = None,
-    **kwargs,
+    **kwargs: Any,  # noqa: ANN401
 ) -> AgentStream:
     """Run an agent locally by its ID."""
     cmd_info = await _resolve_agent_command(
@@ -99,7 +99,7 @@ async def run_local_attached(
     extra_args: Sequence[str] = (),
     env: dict[str, str] | None = None,
     cwd: str | Path | None = None,
-    **kwargs,
+    **kwargs: Any,  # noqa: ANN401
 ) -> int:
     cmd_info = await _resolve_agent_command(
         id, extra_args=extra_args, env=env, cwd=cwd, **kwargs
@@ -113,7 +113,7 @@ async def _resolve_agent_command(
     extra_args: Sequence[str] = (),
     env: dict[str, str] | None = None,
     cwd: str | Path | None = None,
-    **kwargs,
+    **kwargs: Any,  # noqa: ANN401
 ) -> AgentCommand:
     """Resolve agent ID to executable command."""
     agent = await fetch_agent(id)
@@ -152,7 +152,7 @@ async def _prepare_npx(
     extra_args: Sequence[str] = (),
     env: dict[str, str] | None = None,
     cwd: str | Path | None = None,
-    **kwargs,
+    **kwargs: Any,  # noqa: ANN401
 ) -> AgentCommand:
     args = [dist.package, *dist.args, *extra_args]
     match await available_programs("bunx", "npx"):
@@ -161,7 +161,7 @@ async def _prepare_npx(
         case "npx":
             cmd = ["npx", "-y", *args]
         case _:
-            assert False
+            raise AssertionError
 
     full_env = {**os.environ, **dist.env, **(env or {})}
 
@@ -176,7 +176,7 @@ async def _prepare_uvx(
     env: dict[str, str] | None = None,
     cwd: str | Path | None = None,
     python_version: str = "3.12",
-    **kwargs,
+    **kwargs: Any,  # noqa: ANN401
 ) -> AgentCommand:
     args = [dist.package, *dist.args, *extra_args]
     match await available_programs("uvx", "pip", "pip3"):
@@ -189,7 +189,7 @@ async def _prepare_uvx(
             await run_process(["python", "-m", "pip", "install", dist.package])
             cmd = [*args]
         case _:
-            assert False
+            raise AssertionError
 
     full_env = {**os.environ, **dist.env, **(env or {})}
     logger.debug("Preparing command: {}", cmd)
@@ -203,7 +203,7 @@ async def _prepare_binary(
     env: dict[str, str] | None = None,
     cwd: str | Path | None = None,
     cache_path: Path | None = None,
-    **kwargs,
+    **kwargs: Any,  # noqa: ANN401
 ) -> AgentCommand:
     if cache_path is None:
         cache_path = Path.home() / ".local" / "bin"
@@ -224,7 +224,7 @@ async def _prepare_binary(
                 case "wget":
                     await run_process(["wget", "-O", tmp.name, dist.archive])
                 case _:
-                    assert False
+                    raise AssertionError
 
             if dist.archive.endswith(".zip"):
                 import zipfile
