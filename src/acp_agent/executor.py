@@ -3,8 +3,10 @@ from __future__ import annotations
 import os
 import platform
 import shutil
+from asyncio import StreamReader, StreamWriter
 from collections.abc import Sequence
 from pathlib import Path
+from typing import NamedTuple, TypedDict
 
 import anyio
 from loguru import logger
@@ -14,13 +16,26 @@ from .models import BinaryDistribution, NpxDistribution, UvxDistribution
 from .registry import fetch_agent
 
 
+class AgentStreamParams(TypedDict):
+    input_stream: StreamWriter
+    output_stream: StreamReader
+
+
+class AgentStream(NamedTuple):
+    input: StreamWriter
+    output: StreamReader
+
+    def as_params(self) -> AgentStreamParams:
+        return AgentStreamParams(input_stream=self.input, output_stream=self.output)
+
+
 async def run_local(
     id: str,
     *,
     extra_args: Sequence[str] = (),
     env: dict[str, str] | None = None,
     cwd: str | Path | None = None,
-    cache_path: Path | None = None,
+    **kwargs,
 ) -> None:
     """Run an agent locally by its ID."""
 
@@ -29,17 +44,12 @@ async def run_local(
         msg = f"Agent with ID '{id}' not found in registry."
         raise AgentNotFoundError(msg)
 
-    cache_path = cache_path or Path.home() / ".local" / "bin"
     dist = agent.distribution
 
     if dist.npx:
-        await execute_npx(
-            dist.npx, extra_args=extra_args, env=env, cwd=cwd, cache_path=cache_path
-        )
+        await execute_npx(dist.npx, extra_args=extra_args, env=env, cwd=cwd, **kwargs)
     elif dist.uvx:
-        await execute_uvx(
-            dist.uvx, extra_args=extra_args, env=env, cwd=cwd, cache_path=cache_path
-        )
+        await execute_uvx(dist.uvx, extra_args=extra_args, env=env, cwd=cwd, **kwargs)
     elif dist.binary:
         platform_key = _get_platform_key()
         binary_dist = dist.binary.get(platform_key)
@@ -47,7 +57,7 @@ async def run_local(
             msg = f"No binary distribution found for platform '{platform_key}'"
             raise DistributionError(msg)
         await execute_binary(
-            binary_dist, extra_args=extra_args, env=env, cwd=cwd, cache_path=cache_path
+            binary_dist, extra_args=extra_args, env=env, cwd=cwd, **kwargs
         )
     else:
         msg = f"Agent '{id}' has no supported distribution method."
@@ -56,10 +66,11 @@ async def run_local(
 
 async def execute_npx(
     dist: NpxDistribution,
+    *,
     extra_args: Sequence[str] = (),
     env: dict[str, str] | None = None,
     cwd: str | Path | None = None,
-    cache_path: Path | None = None,
+    **kwargs,
 ) -> None:
     tool = _find_runner(["bunx", "npx"])
     cmd = [tool, dist.package, *dist.args, *extra_args]
@@ -71,14 +82,16 @@ async def execute_npx(
 
 async def execute_uvx(
     dist: UvxDistribution,
+    *,
     extra_args: Sequence[str] = (),
     env: dict[str, str] | None = None,
     cwd: str | Path | None = None,
-    cache_path: Path | None = None,
+    python_version: str = "3.12",
+    **kwargs,
 ) -> None:
     tool = _find_runner(["uvx", "pip"])
     if tool == "uvx":
-        cmd = ["uvx", "--python", "3.12", dist.package, *dist.args, *extra_args]
+        cmd = ["uvx", "--python", python_version, dist.package, *dist.args, *extra_args]
     else:
         logger.warning(
             "Using pip as fallback for uvx. This will install the package globally or in the current env."
@@ -97,6 +110,7 @@ async def execute_binary(
     env: dict[str, str] | None = None,
     cwd: str | Path | None = None,
     cache_path: Path | None = None,
+    **kwargs,
 ) -> None:
     if cache_path is None:
         cache_path = Path.home() / ".local" / "bin"
