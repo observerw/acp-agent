@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import shutil
 from asyncio import StreamReader, StreamWriter
 from collections.abc import Sequence
 from pathlib import Path
@@ -10,6 +9,7 @@ from typing import Any, NamedTuple, TypedDict
 
 from loguru import logger
 
+from acp_agent.utils.archive import extract_binary
 from acp_agent.utils.platform import get_platform_key
 from acp_agent.utils.sh import available_programs
 
@@ -226,19 +226,12 @@ async def _prepare_binary(
                 case _:
                     raise AssertionError
 
-            if dist.archive.endswith(".zip"):
-                import zipfile
-
-                with zipfile.ZipFile(tmp.name, "r") as zip_ref:
-                    # Extract the specific command binary
-                    zip_ref.extract(Path(dist.cmd).name, path=cache_path)
-            elif dist.archive.endswith((".tar.gz", ".tgz")):
-                import tarfile
-
-                with tarfile.open(tmp.name, "r:gz") as tar_ref:
-                    tar_ref.extract(Path(dist.cmd).name, path=cache_path)
-            else:
-                shutil.copy(tmp.name, binary_path)
+            await asyncio.to_thread(
+                extract_binary,
+                archive_path=tmp.name,
+                binary_name=Path(dist.cmd).name,
+                dest_dir=cache_path,
+            )
 
         binary_path.chmod(0o755)
 
