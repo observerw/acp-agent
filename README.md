@@ -85,10 +85,24 @@ async def main():
     )
     Path("Dockerfile").write_text(content)
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    if __name__ == "__main__":
+        asyncio.run(main())
 ```
 
-## License 📄
+#### Managing Agent Configuration
+
+For many agents, maintaining configuration and authentication state is crucial. The SDK provides a `get_config` function that returns the default host paths for an agent's configuration and credentials:
+
+```python
+from acp_agent import get_config
+
+if config := get_config("opencode"):
+    print(f"Config path: {config.config}") # ~/.config/opencode
+    print(f"Credential path: {config.credential}") # ~/.local/share/opencode/auth.json
+```
+
+After starting your container, you can manually copy these files from your host to the container's expected locations (e.g., via `docker cp`) to fully replicate your host-side environment and authentication state within the isolated container.
+
+# License
 
 [MIT License](LICENSE)
