@@ -4,11 +4,10 @@ from pathlib import Path
 from typing import Annotated, Final
 
 from cyclopts import App, Parameter
-from loguru import logger
 from rich.console import Console
 
 from acp_agent.registry.fetch import list_agents
-from acp_agent.spawn import SpawnConfig, run_local_attached
+from acp_agent.spawn import run_local
 
 from .utils import display_agents_table, parse_env
 
@@ -30,10 +29,6 @@ async def run(
         Path | None,
         Parameter(help="Working directory for the agent."),
     ] = None,
-    cache_path: Annotated[
-        Path | None,
-        Parameter(help="Directory to cache agent binaries/packages."),
-    ] = None,
 ) -> None:
     """Run an agent locally by its ID.
 
@@ -45,18 +40,12 @@ async def run(
         Additional arguments to pass to the agent.
     """
 
-    try:
-        env_dict = parse_env(env)
-    except ValueError as e:
-        logger.error(str(e))
-        raise SystemExit(1) from e
-
-    exit_code = await run_local_attached(
+    exit_code = await run_local(
         agent_id,
+        attach=True,
         extra_args=extra_args,
-        env=env_dict,
+        env=parse_env(env or []),
         cwd=cwd,
-        config=SpawnConfig(cache_path=cache_path),
     )
     raise SystemExit(exit_code)
 

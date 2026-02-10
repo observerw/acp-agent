@@ -25,6 +25,7 @@ dependencies = [
     "httpx-ws>=0.8.2",
     "litestar>=2.19.0",
     "loguru>=0.7.3",
+    "platformdirs>=4.5.1",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",
     "rich>=14.3.2",

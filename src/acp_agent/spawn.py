@@ -5,7 +5,7 @@ import os
 from asyncio import StreamReader, StreamWriter
 from collections.abc import Sequence
 from pathlib import Path
-from typing import NamedTuple, TypedDict
+from typing import Literal, NamedTuple, TypedDict, overload
 
 import anyio
 from loguru import logger
@@ -85,59 +85,54 @@ async def spawn_process(
     return AgentStream(input=process.stdin, output=process.stdout)
 
 
+@overload
 async def run_local(
     id: str,
     *,
-    extra_args: Sequence[str] = (),
-    env: dict[str, str] | None = None,
-    cwd: str | Path | None = None,
-    config: SpawnConfig | None = None,
-) -> AgentStream:
-    """Run an agent locally by its ID."""
-    cmd_info = await _resolve_agent_command(
-        id, extra_args=extra_args, env=env, cwd=cwd, config=config
-    )
-    return await spawn_process(**cmd_info)
+    attach: Literal[False] = ...,
+    extra_args: Sequence[str] = ...,
+    env: dict[str, str] | None = ...,
+    cwd: str | Path | None = ...,
+    config: SpawnConfig | None = ...,
+) -> AgentStream: ...
 
 
-async def run_local_attached(
+@overload
+async def run_local(
     id: str,
     *,
-    extra_args: Sequence[str] = (),
-    env: dict[str, str] | None = None,
-    cwd: str | Path | None = None,
-    config: SpawnConfig | None = None,
-) -> int:
-    cmd_info = await _resolve_agent_command(
-        id, extra_args=extra_args, env=env, cwd=cwd, config=config
-    )
-    return await run_process(**cmd_info)
+    attach: Literal[True],
+    extra_args: Sequence[str] = ...,
+    env: dict[str, str] | None = ...,
+    cwd: str | Path | None = ...,
+    config: SpawnConfig | None = ...,
+) -> int: ...
 
 
-async def _resolve_agent_command(
+async def run_local(
     id: str,
     *,
+    attach: bool = False,
     extra_args: Sequence[str] = (),
     env: dict[str, str] | None = None,
     cwd: str | Path | None = None,
     config: SpawnConfig | None = None,
-) -> AgentCommand:
-    """Resolve agent ID to executable command."""
+) -> AgentStream | int:
     agent = await fetch_agent(id)
     if not agent:
         msg = f"Agent with ID '{id}' not found in registry."
         raise AgentNotFoundError(msg)
 
-    dist = agent.dist_union
+    union = agent.dist_union
     config = config or settings
 
-    if dist.npx:
-        cmd = await _prepare_npx(dist.npx, extra_args=extra_args, config=config)
-    elif dist.uvx:
-        cmd = await _prepare_uvx(dist.uvx, extra_args=extra_args, config=config)
-    elif dist.binary:
+    if union.npx:
+        cmd = await _prepare_npx(union.npx, extra_args=extra_args, config=config)
+    elif union.uvx:
+        cmd = await _prepare_uvx(union.uvx, extra_args=extra_args, config=config)
+    elif union.binary:
         platform_key = get_platform_key()
-        binary_dist = dist.binary.get(platform_key)
+        binary_dist = union.binary.get(platform_key)
         if not binary_dist:
             raise DistributionError(
                 f"No binary distribution found for platform '{platform_key}'"
@@ -146,18 +141,20 @@ async def _resolve_agent_command(
     else:
         raise DistributionError("Agent distribution is not specified or unsupported")
 
-    return AgentCommand(
+    run_cmd = AgentCommand(
         cmd=cmd,
         env={**os.environ, **(env or {})},
         cwd=Path(cwd) if cwd else None,
     )
+    if attach:
+        return await run_process(**run_cmd)
+    return await spawn_process(**run_cmd)
 
 
 async def _prepare_npx(
     dist: NpxDistribution,
-    *,
-    extra_args: Sequence[str] = (),
-    config: SpawnConfig | None = None,
+    extra_args: Sequence[str],
+    config: SpawnConfig | None,
 ) -> list[str]:
     args = [dist.package, *dist.args, *extra_args]
     match await available_programs("bunx", "npx"):
@@ -171,11 +168,9 @@ async def _prepare_npx(
 
 async def _prepare_uvx(
     dist: UvxDistribution,
-    *,
-    extra_args: Sequence[str] = (),
-    config: SpawnConfig | None = None,
+    extra_args: Sequence[str],
+    config: SpawnConfig,
 ) -> list[str]:
-    config = config or settings
     args = [dist.package, *dist.args, *extra_args]
     match await available_programs("uvx", "pip", "pip3"):
         case "uvx":
@@ -192,17 +187,12 @@ async def _prepare_uvx(
 
 async def _prepare_binary(
     dist: BinaryDistribution,
-    *,
-    extra_args: Sequence[str] = (),
-    config: SpawnConfig | None = None,
+    extra_args: Sequence[str],
+    config: SpawnConfig,
 ) -> list[str]:
-    config = config or settings
-    cache_path = config.cache_path
-    if cache_path is None:
-        cache_path = Path.home() / ".local" / "bin"
-
-    cache_path.mkdir(parents=True, exist_ok=True)
-    binary_path = anyio.Path(cache_path / Path(dist.cmd).name)
+    cache_path = anyio.Path(config.cache_path)
+    await cache_path.mkdir(parents=True, exist_ok=True)
+    binary_path = cache_path / Path(dist.cmd).name
 
     if not await binary_path.exists():
         logger.info("Downloading binary from {} to {}", dist.archive, binary_path)
@@ -221,8 +211,9 @@ async def _prepare_binary(
             await asyncio.to_thread(
                 extract_binary,
                 archive_path=tmp.name,
+                # registry cmd may include relative path
                 binary_name=Path(dist.cmd).name,
-                dest_dir=cache_path,
+                dest_dir=Path(cache_path),
             )
 
         await binary_path.chmod(0o755)
