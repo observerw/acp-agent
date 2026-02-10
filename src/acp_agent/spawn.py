@@ -175,14 +175,18 @@ async def _prepare_uvx(
     match await available_programs("uvx", "pip", "pip3"):
         case "uvx":
             return ["uvx", "--python", config.python_version, *args]
-        case "pip" | "pip3":
+        case "pip" | "pip3" as pip if config.allow_pip:
             logger.warning(
-                "Using pip as fallback for uvx. This will install the package globally or in the current env."
+                "Using pip as fallback for uvx. "
+                "This will install the package globally or in the current env."
             )
-            await run_process(["python", "-m", "pip", "install", dist.package])
+            await run_process([pip, "install", dist.package])
             return args
         case _:
-            raise AssertionError
+            raise ValueError(
+                "No available program to install uvx package. "
+                "Please install uvx or allow pip fallback."
+            )
 
 
 async def _prepare_binary(
@@ -206,7 +210,10 @@ async def _prepare_binary(
                 case "wget":
                     await run_process(["wget", "-O", tmp.name, dist.archive])
                 case _:
-                    raise AssertionError
+                    raise ValueError(
+                        "No available program to download binary. "
+                        "Please install curl or wget."
+                    )
 
             await asyncio.to_thread(
                 extract_binary,

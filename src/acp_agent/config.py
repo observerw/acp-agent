@@ -19,7 +19,13 @@ class SpawnConfig(BaseSettings):
     )
 
     python_version: str = "3.12"
+    """Python version to use for spawning agents. Default is 3.12."""
+
+    allow_pip: bool = False
+    """Whether to allow pip global installation when uv is not available."""
+
     cache_path: Path = Field(default=DEFAULT_CACHE_PATH)
+    """Path to cache directory for storing downloaded binaries."""
 
 
 settings = SpawnConfig()
