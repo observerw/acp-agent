@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import NamedTuple, TypedDict
 
+import anyio
 from loguru import logger
 
 from acp_agent.utils.platform import get_platform_key
@@ -15,7 +16,11 @@ from acp_agent.utils.sh import available_programs
 from .config import SpawnConfig, settings
 from .exceptions import AgentNotFoundError, DistributionError
 from .registry import fetch_agent
-from .registry.model import BinaryDistribution, NpxDistribution, UvxDistribution
+from .registry.model import (
+    BinaryDistribution,
+    NpxDistribution,
+    UvxDistribution,
+)
 from .utils.archive import extract_binary
 
 
@@ -127,95 +132,79 @@ async def _resolve_agent_command(
     config = config or settings
 
     if dist.npx:
-        return await _prepare_npx(
-            dist.npx, extra_args=extra_args, env=env, cwd=cwd, config=config
-        )
-
-    if dist.uvx:
-        return await _prepare_uvx(
-            dist.uvx, extra_args=extra_args, env=env, cwd=cwd, config=config
-        )
-
-    if dist.binary:
+        cmd = await _prepare_npx(dist.npx, extra_args=extra_args, config=config)
+    elif dist.uvx:
+        cmd = await _prepare_uvx(dist.uvx, extra_args=extra_args, config=config)
+    elif dist.binary:
         platform_key = get_platform_key()
         binary_dist = dist.binary.get(platform_key)
         if not binary_dist:
-            msg = f"No binary distribution found for platform '{platform_key}'"
-            raise DistributionError(msg)
-        return await _prepare_binary(
-            binary_dist, extra_args=extra_args, env=env, cwd=cwd, config=config
-        )
+            raise DistributionError(
+                f"No binary distribution found for platform '{platform_key}'"
+            )
+        cmd = await _prepare_binary(binary_dist, extra_args=extra_args, config=config)
+    else:
+        raise DistributionError("Agent distribution is not specified or unsupported")
 
-    raise DistributionError(f"Agent '{id}' has no supported distribution method.")
+    return AgentCommand(
+        cmd=cmd,
+        env={**os.environ, **(env or {})},
+        cwd=Path(cwd) if cwd else None,
+    )
 
 
 async def _prepare_npx(
     dist: NpxDistribution,
     *,
     extra_args: Sequence[str] = (),
-    env: dict[str, str] | None = None,
-    cwd: str | Path | None = None,
     config: SpawnConfig | None = None,
-) -> AgentCommand:
+) -> list[str]:
     args = [dist.package, *dist.args, *extra_args]
     match await available_programs("bunx", "npx"):
         case "bunx":
-            cmd = ["bunx", *args]
+            return ["bunx", *args]
         case "npx":
-            cmd = ["npx", "-y", *args]
+            return ["npx", "-y", *args]
         case _:
             raise AssertionError
-
-    full_env = {**os.environ, **dist.env, **(env or {})}
-
-    logger.debug("Preparing command: {}", cmd)
-    return AgentCommand(cmd=cmd, env=full_env, cwd=Path(cwd) if cwd else None)
 
 
 async def _prepare_uvx(
     dist: UvxDistribution,
     *,
     extra_args: Sequence[str] = (),
-    env: dict[str, str] | None = None,
-    cwd: str | Path | None = None,
     config: SpawnConfig | None = None,
-) -> AgentCommand:
+) -> list[str]:
     config = config or settings
     args = [dist.package, *dist.args, *extra_args]
     match await available_programs("uvx", "pip", "pip3"):
         case "uvx":
-            cmd = ["uvx", "--python", config.python_version, *args]
+            return ["uvx", "--python", config.python_version, *args]
         case "pip" | "pip3":
             logger.warning(
                 "Using pip as fallback for uvx. This will install the package globally or in the current env."
             )
             await run_process(["python", "-m", "pip", "install", dist.package])
-            cmd = [*args]
+            return args
         case _:
             raise AssertionError
-
-    full_env = {**os.environ, **dist.env, **(env or {})}
-    logger.debug("Preparing command: {}", cmd)
-    return AgentCommand(cmd=cmd, env=full_env, cwd=Path(cwd) if cwd else None)
 
 
 async def _prepare_binary(
     dist: BinaryDistribution,
     *,
     extra_args: Sequence[str] = (),
-    env: dict[str, str] | None = None,
-    cwd: str | Path | None = None,
     config: SpawnConfig | None = None,
-) -> AgentCommand:
+) -> list[str]:
     config = config or settings
     cache_path = config.cache_path
     if cache_path is None:
         cache_path = Path.home() / ".local" / "bin"
 
     cache_path.mkdir(parents=True, exist_ok=True)
-    binary_path = cache_path / Path(dist.cmd).name
+    binary_path = anyio.Path(cache_path / Path(dist.cmd).name)
 
-    if not binary_path.exists():
+    if not await binary_path.exists():
         logger.info("Downloading binary from {} to {}", dist.archive, binary_path)
 
         import tempfile
@@ -236,9 +225,6 @@ async def _prepare_binary(
                 dest_dir=cache_path,
             )
 
-        binary_path.chmod(0o755)
+        await binary_path.chmod(0o755)
 
-    cmd = [str(binary_path), *dist.args, *extra_args]
-    full_env = {**os.environ, **dist.env, **(env or {})}
-    logger.debug("Preparing command: {}", cmd)
-    return AgentCommand(cmd=cmd, env=full_env, cwd=Path(cwd) if cwd else None)
+    return [str(binary_path), *dist.args, *extra_args]
