@@ -50,16 +50,9 @@ async def run_process(
     cwd: str | Path | None = None,
 ) -> int:
     """Run a subprocess asynchronously and wait for it to complete."""
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        env=env,
-        cwd=cwd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
+    process = await asyncio.create_subprocess_exec(*cmd, env=env, cwd=cwd)
 
-    await process.communicate()
-    if (returncode := process.returncode) != 0:
+    if (returncode := await process.wait()) != 0:
         msg = f"Process failed with return code {process.returncode}"
         raise RuntimeError(msg)
     return returncode
