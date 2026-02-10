@@ -1,0 +1,25 @@
+{% if archive_url -%}
+FROM docker.io/curlimages/curl:latest AS essentials
+USER root
+RUN curl -fSL "{{ archive_url }}" -o "/bin/{{ cmd }}" && chmod +x "/bin/{{ cmd }}"
+{%- endif %}
+
+{{ containerfile }}
+
+{% if archive_url -%}
+COPY --from=essentials /bin/{{ cmd }} {{ bin_dir }}/{{ cmd }}
+{%- endif %}
+{% if npx -%}
+COPY --from=oven/bun:latest /usr/local/bin/bun* {{ bin_dir }}/
+{%- endif %}
+{% if uvx -%}
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx {{ bin_dir }}/
+{%- endif %}
+
+{% if env_vars -%}
+{% for key, value in env_vars.items() %}
+ENV {{ key }}={{ value }}
+{% endfor %}
+{%- endif %}
+
+CMD ["{{ cmd }}", {% for arg in args %}"{{ arg }}"{% if not loop.last %}, {% endif %}{% endfor %}]
