@@ -5,17 +5,18 @@ import os
 from asyncio import StreamReader, StreamWriter
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, NamedTuple, TypedDict
+from typing import NamedTuple, TypedDict
 
 from loguru import logger
 
-from acp_agent.utils.archive import extract_binary
 from acp_agent.utils.platform import get_platform_key
 from acp_agent.utils.sh import available_programs
 
+from .config import SpawnConfig, settings
 from .exceptions import AgentNotFoundError, DistributionError
 from .registry import fetch_agent
 from .registry.model import BinaryDistribution, NpxDistribution, UvxDistribution
+from .utils.archive import extract_binary
 
 
 class AgentStreamParams(TypedDict):
@@ -51,6 +52,7 @@ async def run_process(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
+
     await process.communicate()
     if (returncode := process.returncode) != 0:
         msg = f"Process failed with return code {process.returncode}"
@@ -84,11 +86,11 @@ async def run_local(
     extra_args: Sequence[str] = (),
     env: dict[str, str] | None = None,
     cwd: str | Path | None = None,
-    **kwargs: Any,  # noqa: ANN401
+    config: SpawnConfig | None = None,
 ) -> AgentStream:
     """Run an agent locally by its ID."""
     cmd_info = await _resolve_agent_command(
-        id, extra_args=extra_args, env=env, cwd=cwd, **kwargs
+        id, extra_args=extra_args, env=env, cwd=cwd, config=config
     )
     return await spawn_process(**cmd_info)
 
@@ -99,10 +101,10 @@ async def run_local_attached(
     extra_args: Sequence[str] = (),
     env: dict[str, str] | None = None,
     cwd: str | Path | None = None,
-    **kwargs: Any,  # noqa: ANN401
+    config: SpawnConfig | None = None,
 ) -> int:
     cmd_info = await _resolve_agent_command(
-        id, extra_args=extra_args, env=env, cwd=cwd, **kwargs
+        id, extra_args=extra_args, env=env, cwd=cwd, config=config
     )
     return await run_process(**cmd_info)
 
@@ -113,7 +115,7 @@ async def _resolve_agent_command(
     extra_args: Sequence[str] = (),
     env: dict[str, str] | None = None,
     cwd: str | Path | None = None,
-    **kwargs: Any,  # noqa: ANN401
+    config: SpawnConfig | None = None,
 ) -> AgentCommand:
     """Resolve agent ID to executable command."""
     agent = await fetch_agent(id)
@@ -122,15 +124,16 @@ async def _resolve_agent_command(
         raise AgentNotFoundError(msg)
 
     dist = agent.dist_union
+    config = config or settings
 
     if dist.npx:
         return await _prepare_npx(
-            dist.npx, extra_args=extra_args, env=env, cwd=cwd, **kwargs
+            dist.npx, extra_args=extra_args, env=env, cwd=cwd, config=config
         )
 
     if dist.uvx:
         return await _prepare_uvx(
-            dist.uvx, extra_args=extra_args, env=env, cwd=cwd, **kwargs
+            dist.uvx, extra_args=extra_args, env=env, cwd=cwd, config=config
         )
 
     if dist.binary:
@@ -140,7 +143,7 @@ async def _resolve_agent_command(
             msg = f"No binary distribution found for platform '{platform_key}'"
             raise DistributionError(msg)
         return await _prepare_binary(
-            binary_dist, extra_args=extra_args, env=env, cwd=cwd, **kwargs
+            binary_dist, extra_args=extra_args, env=env, cwd=cwd, config=config
         )
 
     raise DistributionError(f"Agent '{id}' has no supported distribution method.")
@@ -152,7 +155,7 @@ async def _prepare_npx(
     extra_args: Sequence[str] = (),
     env: dict[str, str] | None = None,
     cwd: str | Path | None = None,
-    **kwargs: Any,  # noqa: ANN401
+    config: SpawnConfig | None = None,
 ) -> AgentCommand:
     args = [dist.package, *dist.args, *extra_args]
     match await available_programs("bunx", "npx"):
@@ -175,13 +178,13 @@ async def _prepare_uvx(
     extra_args: Sequence[str] = (),
     env: dict[str, str] | None = None,
     cwd: str | Path | None = None,
-    python_version: str = "3.12",
-    **kwargs: Any,  # noqa: ANN401
+    config: SpawnConfig | None = None,
 ) -> AgentCommand:
+    config = config or settings
     args = [dist.package, *dist.args, *extra_args]
     match await available_programs("uvx", "pip", "pip3"):
         case "uvx":
-            cmd = ["uvx", "--python", python_version, *args]
+            cmd = ["uvx", "--python", config.python_version, *args]
         case "pip" | "pip3":
             logger.warning(
                 "Using pip as fallback for uvx. This will install the package globally or in the current env."
@@ -202,9 +205,10 @@ async def _prepare_binary(
     extra_args: Sequence[str] = (),
     env: dict[str, str] | None = None,
     cwd: str | Path | None = None,
-    cache_path: Path | None = None,
-    **kwargs: Any,  # noqa: ANN401
+    config: SpawnConfig | None = None,
 ) -> AgentCommand:
+    config = config or settings
+    cache_path = config.cache_path
     if cache_path is None:
         cache_path = Path.home() / ".local" / "bin"
 
@@ -213,12 +217,11 @@ async def _prepare_binary(
 
     if not binary_path.exists():
         logger.info("Downloading binary from {} to {}", dist.archive, binary_path)
-        downloader = await available_programs("curl", "wget")
 
         import tempfile
 
         with tempfile.NamedTemporaryFile(suffix=Path(dist.archive).suffix) as tmp:
-            match downloader:
+            match await available_programs("curl", "wget"):
                 case "curl":
                     await run_process(["curl", "-L", "-o", tmp.name, dist.archive])
                 case "wget":

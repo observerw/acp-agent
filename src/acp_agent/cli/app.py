@@ -8,7 +8,7 @@ from loguru import logger
 from rich.console import Console
 
 from acp_agent.registry.fetch import list_agents
-from acp_agent.spawn import run_local_attached
+from acp_agent.spawn import SpawnConfig, run_local_attached
 
 from .utils import display_agents_table, parse_env
 
@@ -56,7 +56,7 @@ async def run(
         extra_args=extra_args,
         env=env_dict,
         cwd=cwd,
-        cache_path=cache_path,
+        config=SpawnConfig(cache_path=cache_path),
     )
     raise SystemExit(exit_code)
 
