@@ -5,6 +5,7 @@ import os
 import tempfile
 from asyncio import StreamReader, StreamWriter
 from collections.abc import Mapping, Sequence
+from functools import cached_property
 from pathlib import Path
 from typing import Final, Literal, NamedTuple, TypedDict, overload
 
@@ -159,6 +160,26 @@ async def _prepare_binary(
 @define
 class ACPAgent:
     agent_id: str
+    _raw_config_path: str | Path | Literal[True] | None = field(
+        default=None, alias="config_path"
+    )
+    """
+    The path to the agent configuration. Can be:
+        - A Path pointing to the config.
+        - True to use global default config path (e.g., `~/.config/opencode` for opencode).
+        - None to not use any config .
+    """
+
+    _raw_credential_path: str | Path | Literal[True] | None = field(
+        default=None, alias="credential_path"
+    )
+    """
+    The path to the agent credential. Can be:
+        - A Path pointing to the credential.
+        - True to use global default credential path (e.g., `~/.local/share/opencode/auth.json` for opencode).
+        - None to not use any credential.
+    """
+
     _raw_extra_args: Sequence[str] = field(factory=tuple, alias="extra_args")
     _raw_env: Mapping[str, str] = field(factory=dict, alias="env")
     _raw_workdir: str | Path | None = field(default=None, alias="workdir")
@@ -173,9 +194,32 @@ class ACPAgent:
         self.env = dict(self._raw_env)
         self.workdir = Path(self._raw_workdir) if self._raw_workdir else None
 
-    @property
-    def config(self) -> AgentConfig | None:
-        return AgentConfig.get(self.agent_id)
+    @cached_property
+    def config_path(self) -> Path | None:
+        match (self._raw_config_path, self.config):
+            case (str() | Path() as path, _) if path:
+                return Path(path).expanduser().resolve()
+            case (True, AgentConfig(config=config_path)):
+                return config_path
+
+    @cached_property
+    def credential_path(self) -> Path | None:
+        match self._raw_credential_path:
+            case str() | Path() as path if path:
+                return Path(path).expanduser().resolve()
+            case True:
+                config = self.config
+                if config and config.credential:
+                    return config.credential
+        return None
+
+    @cached_property
+    def config(self) -> AgentConfig:
+        if config := AgentConfig.get(self.agent_id):
+            return config
+        raise AgentNotFoundError(
+            f"Agent with ID '{self.agent_id}' not found in registry."
+        )
 
     @overload
     async def run(self, *, attach: Literal[False] = ...) -> AgentStream: ...
