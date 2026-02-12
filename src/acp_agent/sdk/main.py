@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 from asyncio import StreamReader, StreamWriter
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Literal, NamedTuple, TypedDict, overload
 
@@ -45,7 +45,7 @@ class AgentCommand(TypedDict):
 async def run_process(
     cmd: Sequence[str],
     *,
-    env: dict[str, str] | None = None,
+    env: Mapping[str, str] | None = None,
     cwd: str | Path | None = None,
 ) -> int:
     """Run a subprocess asynchronously and wait for it to complete."""
@@ -60,7 +60,7 @@ async def run_process(
 async def spawn_process(
     cmd: Sequence[str],
     *,
-    env: dict[str, str] | None = None,
+    env: Mapping[str, str] | None = None,
     cwd: str | Path | None = None,
 ) -> AgentStream:
     """Spawn a subprocess and return its streams."""
@@ -83,7 +83,7 @@ async def run_local(
     *,
     attach: Literal[False] = ...,
     extra_args: Sequence[str] = ...,
-    env: dict[str, str] | None = ...,
+    env: Mapping[str, str] | None = ...,
     cwd: str | Path | None = ...,
     config: SpawnSettings | None = ...,
 ) -> AgentStream: ...
@@ -95,7 +95,7 @@ async def run_local(
     *,
     attach: Literal[True],
     extra_args: Sequence[str] = ...,
-    env: dict[str, str] | None = ...,
+    env: Mapping[str, str] | None = ...,
     cwd: str | Path | None = ...,
     config: SpawnSettings | None = ...,
 ) -> int: ...
@@ -106,7 +106,7 @@ async def run_local(
     *,
     attach: bool = False,
     extra_args: Sequence[str] = (),
-    env: dict[str, str] | None = None,
+    env: Mapping[str, str] | None = None,
     cwd: str | Path | None = None,
     config: SpawnSettings | None = None,
 ) -> AgentStream | int:
