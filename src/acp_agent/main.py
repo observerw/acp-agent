@@ -7,7 +7,7 @@ from asyncio import StreamReader, StreamWriter
 from collections.abc import Mapping, Sequence
 from functools import cached_property
 from pathlib import Path
-from typing import Final, Literal, NamedTuple, Self, TypedDict, overload
+from typing import Final, Literal, NamedTuple, Self, overload
 
 import anyio
 from acp import Client, connect_to_agent
@@ -31,24 +31,9 @@ from .utils.platform import get_platform_key
 from .utils.sh import available_programs
 
 
-class AgentStreamParams(TypedDict):
-    input_stream: StreamWriter
-    output_stream: StreamReader
-
-
 class AgentStream(NamedTuple):
     input: StreamWriter
     output: StreamReader
-
-    def as_params(self) -> AgentStreamParams:
-        """Return stream fields in `create_stdio` parameter shape."""
-        return AgentStreamParams(input_stream=self.input, output_stream=self.output)
-
-
-class AgentCommand(TypedDict):
-    cmd: list[str]
-    env: dict[str, str]
-    cwd: Path | None
 
 
 _env: Final = Environment(loader=PackageLoader("acp_agent", "templates"))
@@ -56,8 +41,7 @@ _containerfile_template: Final = _env.get_template("Containerfile.j2")
 
 
 async def run_process(
-    cmd: Sequence[str],
-    *,
+    *cmd: str,
     env: Mapping[str, str] | None = None,
     cwd: str | Path | None = None,
 ) -> int:
@@ -70,8 +54,7 @@ async def run_process(
 
 
 async def spawn_process(
-    cmd: Sequence[str],
-    *,
+    *cmd: str,
     env: Mapping[str, str] | None = None,
     cwd: str | Path | None = None,
 ) -> AgentStream:
@@ -114,7 +97,7 @@ async def _prepare_uvx(
                 "Using pip as fallback for uvx. "
                 "This will install the package globally or in the current env."
             )
-            await run_process([pip, "install", dist.package])
+            await run_process(pip, "install", dist.package)
             return args
         case _:
             raise ValueError(
@@ -138,9 +121,9 @@ async def _prepare_binary(
         with tempfile.NamedTemporaryFile() as tmp:
             match await available_programs("curl", "wget"):
                 case "curl":
-                    await run_process(["curl", "-L", "-o", tmp.name, dist.archive])
+                    await run_process("curl", "-L", "-o", tmp.name, dist.archive)
                 case "wget":
-                    await run_process(["wget", "-O", tmp.name, dist.archive])
+                    await run_process("wget", "-O", tmp.name, dist.archive)
                 case _:
                     raise ValueError(
                         "No available program to download binary. "
@@ -240,14 +223,10 @@ class ACPAgent:
     async def run(self, *, attach: bool = False) -> AgentStream | int:
         """Run agent command and optionally wait for process completion."""
         cmd = await self.prepare_command()
-        run_cmd = AgentCommand(
-            cmd=cmd,
-            env={**os.environ, **self.env},
-            cwd=self.workdir,
-        )
+        env = {**os.environ, **self.env}
         if attach:
-            return await run_process(**run_cmd)
-        return await spawn_process(**run_cmd)
+            return await run_process(*cmd, env=env, cwd=self.workdir)
+        return await spawn_process(*cmd, env=env, cwd=self.workdir)
 
     async def connect_client(self, client: Client) -> ClientSideConnection:
         """Connect to the agent process using ACP protocol."""
