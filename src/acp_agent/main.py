@@ -57,8 +57,7 @@ async def run_process(
     process = await asyncio.create_subprocess_exec(*cmd, env=env, cwd=cwd)
 
     if (returncode := await process.wait()) != 0:
-        msg = f"Process failed with return code {process.returncode}"
-        raise RuntimeError(msg)
+        raise RuntimeError(f"Process failed with return code {process.returncode}")
     return returncode
 
 
@@ -82,12 +81,7 @@ async def spawn_process(
     return AgentStream(input=process.stdin, output=process.stdout)
 
 
-async def _prepare_npx(
-    dist: NpxDistribution,
-    extra_args: Sequence[str],
-    spawn_settings: SpawnSettings,
-) -> list[str]:
-    del spawn_settings
+async def _prepare_npx(dist: NpxDistribution, extra_args: Sequence[str]) -> list[str]:
     args = [dist.package, *dist.args, *extra_args]
     match await available_programs("bunx", "npx"):
         case "bunx":
@@ -241,24 +235,21 @@ class ACPAgent:
     async def format_command(self) -> list[str]:
         agent = await fetch_agent(self.agent_id)
         if not agent:
-            msg = f"Agent with ID '{self.agent_id}' not found in registry."
-            raise AgentNotFoundError(msg)
+            raise AgentNotFoundError(
+                f"Agent with ID '{self.agent_id}' not found in registry."
+            )
 
         union = agent.dist_union
-        spawn_settings = self.spawn_settings or env_settings
+        settings = self.spawn_settings or env_settings
 
         if union.npx:
-            return await _prepare_npx(
-                union.npx,
-                extra_args=self.extra_args,
-                spawn_settings=spawn_settings,
-            )
+            return await _prepare_npx(union.npx, extra_args=self.extra_args)
 
         if union.uvx:
             return await _prepare_uvx(
                 union.uvx,
                 extra_args=self.extra_args,
-                spawn_settings=spawn_settings,
+                spawn_settings=settings,
             )
 
         if union.binary:
@@ -271,7 +262,7 @@ class ACPAgent:
             return await _prepare_binary(
                 binary_dist,
                 extra_args=self.extra_args,
-                spawn_settings=spawn_settings,
+                spawn_settings=settings,
             )
 
         raise DistributionError("Agent distribution is not specified or unsupported")
@@ -280,31 +271,25 @@ class ACPAgent:
         self,
         containerfile: str,
         *,
-        bin_dir: str = "/usr/local/bin",
         mode: Literal["run", "sleep"] = "run",
+        bin_dir: str = "/usr/local/bin",
     ) -> str:
         agent = await fetch_agent(self.agent_id)
         if not agent:
-            msg = f"Agent with id {self.agent_id} not found"
-            raise ValueError(msg)
-
-        dist = agent.dist
-        archive_url = dist.archive if isinstance(dist, BinaryDistribution) else None
+            raise ValueError(f"Agent with id {self.agent_id} not found")
 
         match mode:
             case "sleep":
-                cmd = "sleep"
-                args = ("infinity",)
+                cmd = ["sleep", "infinity"]
             case "run":
-                cmd = dist.format_cmd()
-                args = (*dist.format_args(), *self.extra_args)
+                cmd = self.format_command()
 
+        dist = agent.dist
         return _containerfile_template.render(
             containerfile=containerfile,
-            archive_url=archive_url,
             env_vars={**dist.env, **self.env},
             cmd=cmd,
-            args=args,
+            binary=dist if isinstance(dist, BinaryDistribution) else None,
             npx=isinstance(dist, NpxDistribution),
             uvx=isinstance(dist, UvxDistribution),
             bin_dir=bin_dir,

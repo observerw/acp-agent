@@ -1,13 +1,13 @@
-{% if archive_url -%}
+{% if binary.archive -%}
 FROM docker.io/curlimages/curl:latest AS essentials
 USER root
-RUN curl -fSL "{{ archive_url }}" -o "/bin/{{ cmd }}" && chmod +x "/bin/{{ cmd }}"
+RUN curl -fSL "{{ binary.archive }}" -o "/bin/{{ binary.cmd }}" && chmod +x "/bin/{{ binary.cmd }}"
 {%- endif %}
 
 {{ containerfile }}
 
-{% if archive_url -%}
-COPY --from=essentials /bin/{{ cmd }} {{ bin_dir }}/{{ cmd }}
+{% if binary.archive -%}
+COPY --from=essentials /bin/{{ binary.cmd }} {{ bin_dir }}/{{ binary.cmd }}
 {%- endif %}
 {% if npx -%}
 COPY --from=oven/bun:latest /usr/local/bin/bun* {{ bin_dir }}/
@@ -26,4 +26,4 @@ ENV {{ key }}={{ value }}
 WORKDIR {{ workdir }}
 {%- endif %}
 
-CMD ["{{ cmd }}", {% for arg in args %}"{{ arg }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+CMD [{% for part in cmd %}"{{ part }}"{% if not loop.last %}, {% endif %}{% endfor %}]
