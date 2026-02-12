@@ -10,18 +10,17 @@ from typing import Literal, NamedTuple, TypedDict, overload
 import anyio
 from loguru import logger
 
-from acp_agent.utils.platform import get_platform_key
-from acp_agent.utils.sh import available_programs
-
-from .config import SpawnConfig, settings
-from .exceptions import AgentNotFoundError, DistributionError
-from .registry import fetch_agent
-from .registry.model import (
+from acp_agent.exceptions import AgentNotFoundError, DistributionError
+from acp_agent.registry import fetch_agent
+from acp_agent.registry.model import (
     BinaryDistribution,
     NpxDistribution,
     UvxDistribution,
 )
-from .utils.archive import extract_binary
+from acp_agent.settings import SpawnSettings, settings
+from acp_agent.utils.archive import extract_binary
+from acp_agent.utils.platform import get_platform_key
+from acp_agent.utils.sh import available_programs
 
 
 class AgentStreamParams(TypedDict):
@@ -86,7 +85,7 @@ async def run_local(
     extra_args: Sequence[str] = ...,
     env: dict[str, str] | None = ...,
     cwd: str | Path | None = ...,
-    config: SpawnConfig | None = ...,
+    config: SpawnSettings | None = ...,
 ) -> AgentStream: ...
 
 
@@ -98,7 +97,7 @@ async def run_local(
     extra_args: Sequence[str] = ...,
     env: dict[str, str] | None = ...,
     cwd: str | Path | None = ...,
-    config: SpawnConfig | None = ...,
+    config: SpawnSettings | None = ...,
 ) -> int: ...
 
 
@@ -109,7 +108,7 @@ async def run_local(
     extra_args: Sequence[str] = (),
     env: dict[str, str] | None = None,
     cwd: str | Path | None = None,
-    config: SpawnConfig | None = None,
+    config: SpawnSettings | None = None,
 ) -> AgentStream | int:
     agent = await fetch_agent(id)
     if not agent:
@@ -147,7 +146,7 @@ async def run_local(
 async def _prepare_npx(
     dist: NpxDistribution,
     extra_args: Sequence[str],
-    config: SpawnConfig | None,
+    config: SpawnSettings | None,
 ) -> list[str]:
     args = [dist.package, *dist.args, *extra_args]
     match await available_programs("bunx", "npx"):
@@ -162,7 +161,7 @@ async def _prepare_npx(
 async def _prepare_uvx(
     dist: UvxDistribution,
     extra_args: Sequence[str],
-    config: SpawnConfig,
+    config: SpawnSettings,
 ) -> list[str]:
     args = [dist.package, *dist.args, *extra_args]
     match await available_programs("uvx", "pip", "pip3"):
@@ -185,7 +184,7 @@ async def _prepare_uvx(
 async def _prepare_binary(
     dist: BinaryDistribution,
     extra_args: Sequence[str],
-    config: SpawnConfig,
+    config: SpawnSettings,
 ) -> list[str]:
     cache_path = anyio.Path(config.cache_path)
     await cache_path.mkdir(parents=True, exist_ok=True)

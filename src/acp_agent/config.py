@@ -1,31 +1,29 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Self
 
-import platformdirs
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
-
-DEFAULT_CACHE_PATH = platformdirs.user_cache_path(
-    appname="acp-agent", ensure_exists=True
-)
+from attrs import frozen
 
 
-class SpawnConfig(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_prefix="ACP_AGENT_",
-        env_file=".env",
-        extra="ignore",
-    )
+@frozen
+class AgentConfig:
+    config: Path
+    credential: Path | None = None
 
-    python_version: str = "3.12"
-    """Python version to use for spawning agents. Default is 3.12."""
-
-    allow_pip: bool = False
-    """Whether to allow pip global installation when uv is not available."""
-
-    cache_path: Path = Field(default=DEFAULT_CACHE_PATH)
-    """Path to cache directory for storing downloaded binaries."""
-
-
-settings = SpawnConfig()
+    @classmethod
+    def get(cls, agent_id: str) -> Self | None:
+        match agent_id:
+            case "opencode":
+                return cls(
+                    config=Path.home() / ".opencode",
+                    credential=Path.home()
+                    / ".local"
+                    / "share"
+                    / "opencode"
+                    / "auth.json",
+                )
+            case "claude-code-acp":
+                return cls(config=Path.home() / ".claude")
+            case "gemini":
+                return cls(config=Path.home() / ".gemini")

@@ -7,7 +7,7 @@ from cyclopts import App, Parameter
 from rich.console import Console
 
 from acp_agent.registry.fetch import list_agents
-from acp_agent.spawn import run_local
+from acp_agent.sdk import run_local
 
 from .utils import display_agents_table, parse_env
 
