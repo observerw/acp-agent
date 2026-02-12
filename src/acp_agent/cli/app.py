@@ -6,8 +6,8 @@ from typing import Annotated, Final
 from cyclopts import App, Parameter
 from rich.console import Console
 
+from acp_agent import ACPAgent
 from acp_agent.registry.fetch import list_agents
-from acp_agent.sdk import run_local
 
 from .utils import display_agents_table, parse_env
 
@@ -40,13 +40,12 @@ async def run(
         Additional arguments to pass to the agent.
     """
 
-    exit_code = await run_local(
+    exit_code = await ACPAgent(
         agent_id,
-        attach=True,
         extra_args=extra_args,
         env=parse_env(env or []),
-        cwd=cwd,
-    )
+        workdir=cwd,
+    ).run(attach=True)
     raise SystemExit(exit_code)
 
 

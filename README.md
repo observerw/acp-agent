@@ -50,55 +50,46 @@ Search Results for 'opencode'
 
 ### 2. SDK Usage
 
-You can integrate `acp-agent` into your Python projects.
+You can integrate `acp-agent` into your Python projects through `ACPAgent`.
 
 ```python
 import asyncio
-from acp_agent import run_local
+from acp_agent import ACPAgent
 
 async def main():
+    agent = ACPAgent("opencode")
+
     # Run an agent and attach to its output (stdout/stderr)
     # This will automatically handle downloading and environment setup
     # returns the exit code of the agent
-    exit_code = await run_local("opencode", attach=True)
+    exit_code = await agent.run(attach=True)
     print(f"Agent exited with code: {exit_code}")
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-### 3. Container Usage
-
-Generate a `Containerfile` to run an agent inside ANY container you defined.
+The same instance can also generate a `Containerfile` and provide config paths:
 
 ```python
 import asyncio
 from pathlib import Path
-from acp_agent import format_containerfile
+from acp_agent import ACPAgent
 
 async def main():
+    agent = ACPAgent("opencode")
+
     # Generate Containerfile content for 'opencode'
     # This will inject the agent installation and CMD into your base image
-    content = await format_containerfile(
-        agent_id="opencode",
-        containerfile="FROM python:3.12-slim"
-    )
+    content = await agent.format_containerfile(containerfile="FROM python:3.12-slim")
     Path("Dockerfile").write_text(content)
 
-    if __name__ == "__main__":
-        asyncio.run(main())
-```
+    if config := agent.config:
+        print(f"Config path: {config.config}")
+        print(f"Credential path: {config.credential}")
 
-#### Managing Agent Configuration
-
-For many agents, maintaining configuration and authentication state is crucial. The SDK provides a `get_config` function that returns the default host paths for an agent's configuration and credentials:
-
-```python
-from acp_agent import get_config
-
-if config := get_config("opencode"):
-    print(f"Config path: {config.config}") # ~/.config/opencode
-    print(f"Credential path: {config.credential}") # ~/.local/share/opencode/auth.json
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
 After starting your container, you can manually copy these files from your host to the container's expected locations (e.g., via `docker cp`) to fully replicate your host-side environment and authentication state within the isolated container.

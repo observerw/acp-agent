@@ -22,4 +22,8 @@ ENV {{ key }}={{ value }}
 {% endfor %}
 {%- endif %}
 
+{% if workdir -%}
+WORKDIR {{ workdir }}
+{%- endif %}
+
 CMD ["{{ cmd }}", {% for arg in args %}"{{ arg }}"{% if not loop.last %}, {% endif %}{% endfor %}]

@@ -15,14 +15,11 @@ class AgentConfig:
     def get(cls, agent_id: str) -> Self | None:
         match agent_id:
             case "opencode":
-                return cls(
-                    config=Path.home() / ".opencode",
-                    credential=Path.home()
-                    / ".local"
-                    / "share"
-                    / "opencode"
-                    / "auth.json",
+                config_path = Path.home() / ".opencode"
+                credential_path = (
+                    Path.home() / ".local" / "share" / "opencode" / "auth.json"
                 )
+                return cls(config=config_path, credential=credential_path)
             case "claude-code-acp":
                 return cls(config=Path.home() / ".claude")
             case "gemini":

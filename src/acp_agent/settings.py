@@ -29,4 +29,4 @@ class SpawnSettings(BaseSettings):
     """Path to cache directory for storing downloaded binaries."""
 
 
-settings: Final = SpawnSettings()
+env_settings: Final = SpawnSettings()
