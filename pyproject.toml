@@ -19,6 +19,7 @@ classifiers = [
 ]
 dependencies = [
     "aioshutil>=1.6",
+    "anyio>=4.12.1",
     "attrs>=25.4.0",
     "cyclopts>=4.5.1",
     "httpx>=0.28.1",
