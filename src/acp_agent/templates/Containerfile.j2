@@ -1,7 +1,15 @@
 {% if binary.archive -%}
-FROM docker.io/curlimages/curl:latest AS essentials
-USER root
-RUN curl -fSL "{{ binary.archive }}" -o "/bin/{{ binary.cmd }}" && chmod +x "/bin/{{ binary.cmd }}"
+FROM alpine:latest AS essentials
+RUN apk add --no-cache curl tar zip unzip && \
+    curl -fSL "{{ binary.archive }}" -o "/tmp/{{ binary.cmd }}.archive" && \
+    if tar -xf "/tmp/{{ binary.cmd }}.archive" -C /bin 2>/dev/null; then \
+      true; \
+    elif unzip -o "/tmp/{{ binary.cmd }}.archive" -d /bin >/dev/null 2>&1; then \
+      true; \
+    else \
+      cp "/tmp/{{ binary.cmd }}.archive" "/bin/{{ binary.cmd }}"; \
+    fi && \
+    chmod +x "/bin/{{ binary.cmd }}"
 {%- endif %}
 
 {{ containerfile }}

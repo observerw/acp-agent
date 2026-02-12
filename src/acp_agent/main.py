@@ -34,6 +34,7 @@ class AgentStream(NamedTuple):
     output: StreamReader
 
     def as_params(self) -> AgentStreamParams:
+        """Return stream fields in `create_stdio` parameter shape."""
         return AgentStreamParams(input_stream=self.input, output_stream=self.output)
 
 
@@ -127,7 +128,7 @@ async def _prepare_binary(
     if not await binary_path.exists():
         logger.info("Downloading binary from {} to {}", dist.archive, binary_path)
 
-        with tempfile.NamedTemporaryFile(suffix=Path(dist.archive).suffix) as tmp:
+        with tempfile.NamedTemporaryFile() as tmp:
             match await available_programs("curl", "wget"):
                 case "curl":
                     await run_process(["curl", "-L", "-o", tmp.name, dist.archive])
@@ -190,6 +191,7 @@ class ACPAgent:
 
     @cached_property
     def config_path(self) -> Path | None:
+        """Return explicit config path or agent default config path."""
         match (self._raw_config_path, self.config):
             case (str() | Path() as path, _) if path:
                 return Path(path).expanduser().resolve()
@@ -198,6 +200,7 @@ class ACPAgent:
 
     @cached_property
     def credential_path(self) -> Path | None:
+        """Return explicit credential path or agent default credential path."""
         match self._raw_credential_path:
             case str() | Path() as path if path:
                 return Path(path).expanduser().resolve()
@@ -209,6 +212,7 @@ class ACPAgent:
 
     @cached_property
     def config(self) -> AgentConfig:
+        """Load and cache the agent config from registry."""
         if config := AgentConfig.get(self.agent_id):
             return config
         raise AgentNotFoundError(
@@ -222,7 +226,8 @@ class ACPAgent:
     async def run(self, *, attach: Literal[True]) -> int: ...
 
     async def run(self, *, attach: bool = False) -> AgentStream | int:
-        cmd = await self.format_command()
+        """Run agent command and optionally wait for process completion."""
+        cmd = await self.prepare_command()
         run_cmd = AgentCommand(
             cmd=cmd,
             env={**os.environ, **self.env},
@@ -232,7 +237,8 @@ class ACPAgent:
             return await run_process(**run_cmd)
         return await spawn_process(**run_cmd)
 
-    async def format_command(self) -> list[str]:
+    async def prepare_command(self) -> list[str]:
+        """Build a runnable command, installing/downloading dependencies if needed."""
         agent = await fetch_agent(self.agent_id)
         if not agent:
             raise AgentNotFoundError(
@@ -274,17 +280,18 @@ class ACPAgent:
         mode: Literal["run", "sleep"] = "run",
         bin_dir: str = "/usr/local/bin",
     ) -> str:
+        """Render a containerfile with command, env vars, and runtime assets."""
         agent = await fetch_agent(self.agent_id)
         if not agent:
             raise ValueError(f"Agent with id {self.agent_id} not found")
+
+        dist = agent.dist
 
         match mode:
             case "sleep":
                 cmd = ["sleep", "infinity"]
             case "run":
-                cmd = self.format_command()
-
-        dist = agent.dist
+                cmd = [dist.format_cmd(), *dist.format_args(), *self.extra_args]
         return _containerfile_template.render(
             containerfile=containerfile,
             env_vars={**dist.env, **self.env},

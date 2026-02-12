@@ -13,15 +13,46 @@ def extract_binary(
     archive_path = Path(archive_path)
     dest_dir = Path(dest_dir)
     dest_path = dest_dir / binary_name
+    dest_dir.mkdir(parents=True, exist_ok=True)
 
-    archive_str = str(archive_path)
-    if archive_str.endswith(".zip"):
+    if zipfile.is_zipfile(archive_path):
         with zipfile.ZipFile(archive_path, "r") as zip_ref:
-            zip_ref.extract(binary_name, path=dest_dir)
-    elif archive_str.endswith((".tar.gz", ".tgz")):
-        with tarfile.open(archive_path, "r:gz") as tar_ref:
-            tar_ref.extract(binary_name, path=dest_dir)
-    else:
-        shutil.copy(archive_path, dest_path)
+            for member in zip_ref.infolist():
+                if member.is_dir():
+                    continue
+                if Path(member.filename).name != binary_name:
+                    continue
+
+                with (
+                    zip_ref.open(member, "r") as source,
+                    dest_path.open("wb") as target,
+                ):
+                    shutil.copyfileobj(source, target)
+                return dest_path
+
+        raise FileNotFoundError(
+            f"Binary '{binary_name}' not found in ZIP archive '{archive_path}'"
+        )
+
+    if tarfile.is_tarfile(archive_path):
+        with tarfile.open(archive_path, "r:*") as tar_ref:
+            for member in tar_ref.getmembers():
+                if not member.isfile():
+                    continue
+                if Path(member.name).name != binary_name:
+                    continue
+
+                source = tar_ref.extractfile(member)
+                if source is None:
+                    continue
+                with source, dest_path.open("wb") as target:
+                    shutil.copyfileobj(source, target)
+                return dest_path
+
+        raise FileNotFoundError(
+            f"Binary '{binary_name}' not found in TAR archive '{archive_path}'"
+        )
+
+    shutil.copy(archive_path, dest_path)
 
     return dest_path
