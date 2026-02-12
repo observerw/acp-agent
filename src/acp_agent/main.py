@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Final, Literal, NamedTuple, Self, TypedDict, overload
 
 import anyio
+from acp import Client, connect_to_agent
+from acp.client import ClientSideConnection
 from attrs import define, field
 from jinja2 import Environment, PackageLoader
 from loguru import logger
@@ -246,6 +248,15 @@ class ACPAgent:
         if attach:
             return await run_process(**run_cmd)
         return await spawn_process(**run_cmd)
+
+    async def connect_client(self, client: Client) -> ClientSideConnection:
+        """Connect to the agent process using ACP protocol."""
+        streams = await self.run(attach=False)
+        return connect_to_agent(
+            client,
+            input_stream=streams.input,
+            output_stream=streams.output,
+        )
 
     def format_command(self) -> list[str]:
         """Build a runnable command without installing dependencies."""
