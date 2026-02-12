@@ -7,7 +7,7 @@ from asyncio import StreamReader, StreamWriter
 from collections.abc import Mapping, Sequence
 from functools import cached_property
 from pathlib import Path
-from typing import Final, Literal, NamedTuple, TypedDict, overload
+from typing import Final, Literal, NamedTuple, Self, TypedDict, overload
 
 import anyio
 from attrs import define, field
@@ -16,8 +16,13 @@ from loguru import logger
 
 from .config import AgentConfig
 from .exceptions import AgentNotFoundError, DistributionError
-from .registry import fetch_agent
-from .registry.model import BinaryDistribution, NpxDistribution, UvxDistribution
+from .registry import Distribution, fetch_agent
+from .registry.model import (
+    BinaryDistribution,
+    NpxDistribution,
+    RegistryAgent,
+    UvxDistribution,
+)
 from .settings import SpawnSettings, env_settings
 from .utils.archive import extract_binary
 from .utils.platform import get_platform_key
@@ -154,61 +159,66 @@ async def _prepare_binary(
 
 @define
 class ACPAgent:
-    agent_id: str
-    _raw_config_path: str | Path | Literal[True] | None = field(
-        default=None, alias="config_path"
-    )
-    """
-    The path to the agent configuration. Can be:
-        - A Path pointing to the config.
-        - True to use global default config path (e.g., `~/.config/opencode` for opencode).
-        - None to not use any config .
-    """
-
-    _raw_credential_path: str | Path | Literal[True] | None = field(
-        default=None, alias="credential_path"
-    )
-    """
-    The path to the agent credential. Can be:
-        - A Path pointing to the credential.
-        - True to use global default credential path (e.g., `~/.local/share/opencode/auth.json` for opencode).
-        - None to not use any credential.
-    """
-
-    _raw_extra_args: Sequence[str] = field(factory=tuple, alias="extra_args")
-    _raw_env: Mapping[str, str] = field(factory=dict, alias="env")
-    _raw_workdir: str | Path | None = field(default=None, alias="workdir")
+    agent: RegistryAgent
+    config_path: Path | None = None
+    credential_path: Path | None = None
+    extra_args: tuple[str, ...] = field(factory=tuple)
+    env: dict[str, str] = field(factory=dict)
+    workdir: Path | None = None
     spawn_settings: SpawnSettings | None = None
 
-    extra_args: tuple[str, ...] = field(init=False)
-    env: dict[str, str] = field(init=False)
-    workdir: Path | None = field(init=False)
+    @classmethod
+    async def create(
+        cls,
+        agent_id: str,
+        *,
+        config_path: str | Path | Literal[True] | None = None,
+        credential_path: str | Path | Literal[True] | None = None,
+        extra_args: Sequence[str] = (),
+        env: Mapping[str, str] | None = None,
+        workdir: str | Path | None = None,
+        spawn_settings: SpawnSettings | None = None,
+    ) -> Self:
+        agent = await fetch_agent(agent_id)
+        if not agent:
+            raise AgentNotFoundError(
+                f"Agent with ID '{agent_id}' not found in registry."
+            )
 
-    def __attrs_post_init__(self) -> None:
-        self.extra_args = tuple(self._raw_extra_args)
-        self.env = dict(self._raw_env)
-        self.workdir = Path(self._raw_workdir) if self._raw_workdir else None
+        config = AgentConfig.get(agent_id)
+        resolved_config_path: Path | None = None
+        resolved_credential_path: Path | None = None
 
-    @cached_property
-    def config_path(self) -> Path | None:
-        """Return explicit config path or agent default config path."""
-        match (self._raw_config_path, self.config):
+        match (config_path, config):
             case (str() | Path() as path, _) if path:
-                return Path(path).expanduser().resolve()
-            case (True, AgentConfig(config=config_path)):
-                return config_path
+                resolved_config_path = Path(path).expanduser().resolve()
+            case (True, AgentConfig(config=default_path)):
+                resolved_config_path = default_path
 
-    @cached_property
-    def credential_path(self) -> Path | None:
-        """Return explicit credential path or agent default credential path."""
-        match self._raw_credential_path:
+        match credential_path:
             case str() | Path() as path if path:
-                return Path(path).expanduser().resolve()
+                resolved_credential_path = Path(path).expanduser().resolve()
             case True:
-                config = self.config
                 if config and config.credential:
-                    return config.credential
-        return None
+                    resolved_credential_path = config.credential
+
+        return cls(
+            agent=agent,
+            config_path=resolved_config_path,
+            credential_path=resolved_credential_path,
+            extra_args=tuple(extra_args),
+            env=dict(env or {}),
+            workdir=Path(workdir) if workdir else None,
+            spawn_settings=spawn_settings,
+        )
+
+    @property
+    def agent_id(self) -> str:
+        return self.agent.id
+
+    @property
+    def dist(self) -> Distribution:
+        return self.agent.dist
 
     @cached_property
     def config(self) -> AgentConfig:
@@ -237,15 +247,17 @@ class ACPAgent:
             return await run_process(**run_cmd)
         return await spawn_process(**run_cmd)
 
+    def format_command(self) -> list[str]:
+        """Build a runnable command without installing dependencies."""
+        return [
+            self.dist.format_cmd(),
+            *self.dist.format_args(),
+            *self.extra_args,
+        ]
+
     async def prepare_command(self) -> list[str]:
         """Build a runnable command, installing/downloading dependencies if needed."""
-        agent = await fetch_agent(self.agent_id)
-        if not agent:
-            raise AgentNotFoundError(
-                f"Agent with ID '{self.agent_id}' not found in registry."
-            )
-
-        union = agent.dist_union
+        union = self.agent.dist_union
         settings = self.spawn_settings or env_settings
 
         if union.npx:
@@ -281,24 +293,20 @@ class ACPAgent:
         bin_dir: str = "/usr/local/bin",
     ) -> str:
         """Render a containerfile with command, env vars, and runtime assets."""
-        agent = await fetch_agent(self.agent_id)
-        if not agent:
-            raise ValueError(f"Agent with id {self.agent_id} not found")
-
-        dist = agent.dist
 
         match mode:
             case "sleep":
                 cmd = ["sleep", "infinity"]
             case "run":
-                cmd = [dist.format_cmd(), *dist.format_args(), *self.extra_args]
+                cmd = self.format_command()
+
         return _containerfile_template.render(
             containerfile=containerfile,
-            env_vars={**dist.env, **self.env},
+            env_vars={**self.dist.env, **self.env},
             cmd=cmd,
-            binary=dist if isinstance(dist, BinaryDistribution) else None,
-            npx=isinstance(dist, NpxDistribution),
-            uvx=isinstance(dist, UvxDistribution),
+            binary=self.dist if isinstance(self.dist, BinaryDistribution) else None,
+            npx=isinstance(self.dist, NpxDistribution),
+            uvx=isinstance(self.dist, UvxDistribution),
             bin_dir=bin_dir,
             workdir=str(self.workdir) if self.workdir else None,
         )

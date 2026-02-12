@@ -40,12 +40,13 @@ async def run(
         Additional arguments to pass to the agent.
     """
 
-    exit_code = await ACPAgent(
-        agent_id,
+    agent = await ACPAgent.create(
+        agent_id=agent_id,
         extra_args=extra_args,
         env=parse_env(env or []),
         workdir=cwd,
-    ).run(attach=True)
+    )
+    exit_code = await agent.run(attach=True)
     raise SystemExit(exit_code)
 
 
