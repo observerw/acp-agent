@@ -7,6 +7,7 @@ from cyclopts import App, Parameter
 from rich.console import Console
 
 from acp_agent import ACPAgent
+from acp_agent.debug import DummyAgent
 from acp_agent.registry.fetch import list_agents
 
 from .utils import display_agents_table, parse_env
@@ -91,6 +92,18 @@ async def search(query: str) -> None:
         f"Search Results for '{query}'",
         console=console,
     )
+
+
+@app.command(name="dummy")
+async def dummy(
+    seed: Annotated[
+        int | None,
+        Parameter(name=["--seed"], help="Seed for deterministic random responses."),
+    ] = None,
+) -> None:
+    """Run a dummy ACP agent for protocol testing."""
+
+    await DummyAgent.run(seed=seed)
 
 
 if __name__ == "__main__":
