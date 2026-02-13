@@ -13,7 +13,7 @@ _BUILTIN_AGENTS: Final[tuple[RegistryAgent, ...]] = (
         {
             "id": "dummy",
             "name": "Dummy",
-            "version": "0.1.1",
+            "version": "0.2.0",
             "description": "Built-in ACP dummy agent for protocol testing",
             "repository": "https://github.com/observerw/acp-agent",
             "authors": ["observerw"],
