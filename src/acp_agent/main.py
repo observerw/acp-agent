@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Final, Literal, NamedTuple, Self, overload
 
 import anyio
+import httpx
 from acp import Client, connect_to_agent
 from acp.client import ClientSideConnection
 from attrs import define, field
@@ -25,7 +26,7 @@ from .registry.model import (
     RegistryAgent,
     UvxDistribution,
 )
-from .settings import SpawnSettings
+from .settings import SpawnSettings, env_settings
 from .utils.archive import extract_binary
 from .utils.sh import available_programs
 
@@ -118,16 +119,7 @@ async def _prepare_binary(
         logger.info("Downloading binary from {} to {}", dist.archive, binary_path)
 
         with tempfile.NamedTemporaryFile() as tmp:
-            match await available_programs("curl", "wget"):
-                case "curl":
-                    await run_process("curl", "-L", "-o", tmp.name, dist.archive)
-                case "wget":
-                    await run_process("wget", "-O", tmp.name, dist.archive)
-                case _:
-                    raise ValueError(
-                        "No available program to download binary. "
-                        "Please install curl or wget."
-                    )
+            await _download_archive(dist.archive, Path(tmp.name))
 
             await asyncio.to_thread(
                 extract_binary,
@@ -139,6 +131,18 @@ async def _prepare_binary(
         await binary_path.chmod(0o755)
 
     return [str(binary_path), *dist.args, *extra_args]
+
+
+async def _download_archive(url: str, output_path: Path) -> None:
+    timeout = httpx.Timeout(connect=30.0, read=120.0, write=120.0, pool=30.0)
+    async with (
+        httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client,
+        client.stream("GET", url) as response,
+    ):
+        response.raise_for_status()
+        async with await anyio.Path(output_path).open("wb") as output:
+            async for chunk in response.aiter_bytes():
+                await output.write(chunk)
 
 
 @define
@@ -193,7 +197,7 @@ class ACPAgent:
             extra_args=tuple(extra_args),
             env=dict(env or {}),
             workdir=Path(workdir) if workdir else None,
-            spawn_settings=spawn_settings,
+            spawn_settings=spawn_settings or env_settings,
         )
 
     @property
@@ -221,7 +225,7 @@ class ACPAgent:
 
     async def run(self, *, attach: bool = False) -> AgentStream | int:
         """Run agent command and optionally wait for process completion."""
-        cmd = await self.prepare_command()
+        cmd = await self.setup()
         env = {**os.environ, **self.env}
         if attach:
             return await run_process(*cmd, env=env, cwd=self.workdir)
@@ -244,7 +248,7 @@ class ACPAgent:
             *self.extra_args,
         ]
 
-    async def prepare_command(self) -> list[str]:
+    async def setup(self) -> list[str]:
         """Build a runnable command, installing/downloading dependencies if needed."""
 
         match self.agent.dist:
@@ -282,19 +286,12 @@ class ACPAgent:
     ) -> str:
         """Render a containerfile with command, env vars, and runtime assets."""
 
-        match mode:
-            case "sleep":
-                cmd = ["sleep", "infinity"]
-            case "run":
-                cmd = self.format_command()
-
         return _containerfile_template.render(
             containerfile=containerfile,
-            env_vars={**self.dist.env, **self.env},
-            cmd=cmd,
-            binary=self.dist if isinstance(self.dist, BinaryDistribution) else None,
-            npx=isinstance(self.dist, NpxDistribution),
-            uvx=isinstance(self.dist, UvxDistribution),
             bin_dir=bin_dir,
+            agent_id=self.agent_id,
+            npx=isinstance(self.agent.dist, NpxDistribution),
+            env_vars=self.env,
             workdir=str(self.workdir) if self.workdir else None,
+            mode=mode,
         )

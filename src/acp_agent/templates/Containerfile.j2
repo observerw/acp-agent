@@ -1,27 +1,10 @@
-{% if binary.archive -%}
-FROM alpine:latest AS essentials
-RUN apk add --no-cache curl tar zip unzip && \
-    curl -fSL "{{ binary.archive }}" -o "/tmp/{{ binary.cmd }}.archive" && \
-    if tar -xf "/tmp/{{ binary.cmd }}.archive" -C /bin 2>/dev/null; then \
-      true; \
-    elif unzip -o "/tmp/{{ binary.cmd }}.archive" -d /bin >/dev/null 2>&1; then \
-      true; \
-    else \
-      cp "/tmp/{{ binary.cmd }}.archive" "/bin/{{ binary.cmd }}"; \
-    fi && \
-    chmod +x "/bin/{{ binary.cmd }}"
-{%- endif %}
-
 {{ containerfile }}
 
-{% if binary.archive -%}
-COPY --from=essentials /bin/{{ binary.cmd }} {{ bin_dir }}/{{ binary.cmd }}
-{%- endif %}
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx {{ bin_dir }}/
+RUN uvx acp-agent setup {{ agent_id }}
+
 {% if npx -%}
 COPY --from=oven/bun:latest /usr/local/bin/bun* {{ bin_dir }}/
-{%- endif %}
-{% if uvx -%}
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx {{ bin_dir }}/
 {%- endif %}
 
 {% if env_vars -%}
@@ -34,4 +17,8 @@ ENV {{ key }}={{ value }}
 WORKDIR {{ workdir }}
 {%- endif %}
 
-CMD [{% for part in cmd %}"{{ part }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+{% if mode == 'sleep' -%}
+CMD ["sleep", "infinity"]
+{% elif mode == 'run' -%}
+CMD ["uvx", "acp-agent", "run", "{{ agent_id }}"]
+{% endif %}

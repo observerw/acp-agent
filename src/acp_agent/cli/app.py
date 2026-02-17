@@ -17,6 +17,20 @@ console: Final = Console()
 
 
 @app.command
+async def setup(agent_id: str) -> None:
+    """Setup an agent locally by its ID (e.g., install dependencies).
+
+    Parameters
+    ----------
+    agent_id
+        The ID of the agent to setup.
+    """
+
+    agent = await ACPAgent.create(agent_id=agent_id)
+    _ = await agent.setup()
+
+
+@app.command
 async def run(
     agent_id: str,
     *extra_args: str,
