@@ -25,9 +25,8 @@ from .registry.model import (
     RegistryAgent,
     UvxDistribution,
 )
-from .settings import SpawnSettings, env_settings
+from .settings import SpawnSettings
 from .utils.archive import extract_binary
-from .utils.platform import get_platform_key
 from .utils.sh import available_programs
 
 
@@ -109,9 +108,9 @@ async def _prepare_uvx(
 async def _prepare_binary(
     dist: BinaryDistribution,
     extra_args: Sequence[str],
-    spawn_settings: SpawnSettings,
+    settings: SpawnSettings,
 ) -> list[str]:
-    cache_path = anyio.Path(spawn_settings.cache_path)
+    cache_path = anyio.Path(settings.cache_path)
     await cache_path.mkdir(parents=True, exist_ok=True)
     binary_path = cache_path / Path(dist.cmd).name
 
@@ -247,33 +246,32 @@ class ACPAgent:
 
     async def prepare_command(self) -> list[str]:
         """Build a runnable command, installing/downloading dependencies if needed."""
-        union = self.agent.dist_union
-        settings = self.spawn_settings or env_settings
 
-        if union.npx:
-            return await _prepare_npx(union.npx, extra_args=self.extra_args)
-
-        if union.uvx:
-            return await _prepare_uvx(
-                union.uvx,
-                extra_args=self.extra_args,
-                spawn_settings=settings,
-            )
-
-        if union.binary:
-            platform_key = get_platform_key()
-            binary_dist = union.binary.get(platform_key)
-            if not binary_dist:
-                raise DistributionError(
-                    f"No binary distribution found for platform '{platform_key}'"
+        match self.agent.dist:
+            case NpxDistribution() as npx:
+                return await _prepare_npx(npx, extra_args=self.extra_args)
+            case UvxDistribution() as uvx:
+                if not self.spawn_settings:
+                    raise ValueError("Spawn settings are required for uvx distribution")
+                return await _prepare_uvx(
+                    uvx,
+                    extra_args=self.extra_args,
+                    spawn_settings=self.spawn_settings,
                 )
-            return await _prepare_binary(
-                binary_dist,
-                extra_args=self.extra_args,
-                spawn_settings=settings,
-            )
-
-        raise DistributionError("Agent distribution is not specified or unsupported")
+            case BinaryDistribution() as binary:
+                if not self.spawn_settings:
+                    raise ValueError(
+                        "Spawn settings are required for binary distribution"
+                    )
+                return await _prepare_binary(
+                    binary,
+                    extra_args=self.extra_args,
+                    settings=self.spawn_settings,
+                )
+            case _:
+                raise DistributionError(
+                    "Agent distribution is not specified or unsupported"
+                )
 
     async def format_containerfile(
         self,
