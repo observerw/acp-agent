@@ -76,19 +76,20 @@ async def _prepare_binary(
 
     bin_path = bin_dir_path / Path(dist.cmd).name
 
-    expect_cmd = [str(bin_path), *dist.args, *extra_args]
+    cmd = [str(bin_path), *dist.args, *extra_args]
 
     if await bin_path.exists():
         logger.info("Binary already exists at {}, skipping download", bin_path)
-        return expect_cmd
+        return cmd
 
     logger.info("Downloading binary from {} to {}", dist.archive, bin_path)
 
-    timeout = httpx.Timeout(connect=30.0, read=120.0, write=120.0, pool=30.0)
-
     async with (
         anyio.NamedTemporaryFile(delete_on_close=True) as archive_file,
-        httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client,
+        httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=30.0, read=120.0, write=120.0, pool=30.0),
+            follow_redirects=True,
+        ) as client,
         client.stream("GET", dist.archive) as response,
     ):
         response.raise_for_status()
@@ -96,8 +97,7 @@ async def _prepare_binary(
             await archive_file.write(chunk)
         await archive_file.flush()
 
-        if not isinstance(archive_file.name, str):
-            raise TypeError("Temporary archive file path is not a string")
+        assert isinstance(archive_file.name, str)
 
         await asyncio.to_thread(
             extract_binary,
@@ -108,7 +108,7 @@ async def _prepare_binary(
 
     await bin_path.chmod(0o755)
 
-    return expect_cmd
+    return cmd
 
 
 @define
