@@ -152,9 +152,8 @@ class ACPAgent:
         match credential_path:
             case str() | Path() as path if path:
                 resolved_credential_path = Path(path).expanduser().resolve()
-            case True:
-                if config and config.credential:
-                    resolved_credential_path = config.credential
+            case True if config and config.credential:
+                resolved_credential_path = config.credential
 
         return cls(
             agent=agent,
@@ -251,7 +250,7 @@ class ACPAgent:
             container_settings = ContainerSettings()
 
         env = container_settings.model_dump(mode="json")
-        env = {key.upper(): value for key, value in env.items()}
+        env = {f"ACP_AGENT_{key.upper()}": value for key, value in env.items()}
 
         return _containerfile_template.render(
             containerfile=containerfile,
