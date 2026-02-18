@@ -61,8 +61,9 @@ async def run(
         env=parse_env(env or []),
         workdir=cwd,
     )
-    exit_code = await agent.run(attach=True)
-    raise SystemExit(exit_code)
+    process = await agent.run()
+    returncode = await process.wait()
+    raise SystemExit(returncode)
 
 
 @app.command(name="list")

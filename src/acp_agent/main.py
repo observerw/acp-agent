@@ -2,16 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import os
-from asyncio import StreamReader, StreamWriter
+from asyncio.subprocess import Process
 from collections.abc import Mapping, Sequence
 from functools import cached_property
 from pathlib import Path
-from typing import Final, Literal, NamedTuple, Self, overload
+from typing import Final, Literal, Self
 
 import anyio
 import httpx
-from acp import Client, connect_to_agent
-from acp.client import ClientSideConnection
 from attrs import define, field
 from jinja2 import Environment, PackageLoader
 from loguru import logger
@@ -29,46 +27,8 @@ from .settings import ContainerSettings, Settings, env_settings
 from .utils.archive import extract_binary
 from .utils.sh import available_programs
 
-
-class AgentStream(NamedTuple):
-    input: StreamWriter
-    output: StreamReader
-
-
 _env: Final = Environment(loader=PackageLoader("acp_agent", "templates"))
 _containerfile_template: Final = _env.get_template("Containerfile.j2")
-
-
-async def run_process(
-    *cmd: str,
-    env: Mapping[str, str] | None = None,
-    cwd: str | Path | None = None,
-) -> int:
-    """Run a subprocess asynchronously and wait for it to complete."""
-    process = await asyncio.create_subprocess_exec(*cmd, env=env, cwd=cwd)
-
-    if (returncode := await process.wait()) != 0:
-        raise RuntimeError(f"Process failed with return code {process.returncode}")
-    return returncode
-
-
-async def spawn_process(
-    *cmd: str,
-    env: Mapping[str, str] | None = None,
-    cwd: str | Path | None = None,
-) -> AgentStream:
-    """Spawn a subprocess and return its streams."""
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        env=env,
-        cwd=cwd,
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    )
-    if process.stdin is None or process.stdout is None:
-        raise RuntimeError("Failed to create subprocess pipes")
-    return AgentStream(input=process.stdin, output=process.stdout)
 
 
 async def _prepare_npx(dist: NpxDistribution, extra_args: Sequence[str]) -> list[str]:
@@ -96,7 +56,7 @@ async def _prepare_uvx(
                 "Using pip as fallback for uvx. "
                 "This will install the package globally or in the current env."
             )
-            await run_process(pip, "install", dist.package)
+            _ = await anyio.run_process((pip, "install", dist.package))
             return args
         case _:
             raise ValueError(
@@ -112,9 +72,7 @@ async def _prepare_binary(
 ) -> list[str]:
     bin_dir_path = anyio.Path(settings.bin_dir_path)
     if not await bin_dir_path.exists():
-        raise FileNotFoundError(
-            f"Binary directory {settings.bin_dir_path} does not exist."
-        )
+        await bin_dir_path.mkdir(parents=True, exist_ok=True)
 
     bin_path = bin_dir_path / Path(dist.cmd).name
 
@@ -134,16 +92,18 @@ async def _prepare_binary(
         client.stream("GET", dist.archive) as response,
     ):
         response.raise_for_status()
-        async with await bin_path.open("wb") as output:
-            async for chunk in response.aiter_bytes():
-                await output.write(chunk)
+        async for chunk in response.aiter_bytes():
+            await archive_file.write(chunk)
+        await archive_file.flush()
 
-        assert isinstance(archive_file.name, str)
+        if not isinstance(archive_file.name, str):
+            raise TypeError("Temporary archive file path is not a string")
+
         await asyncio.to_thread(
             extract_binary,
             archive_path=Path(archive_file.name),
             binary_name=Path(dist.cmd).name,
-            dest_dir=Path(bin_dir_path),
+            dest_dir=settings.bin_dir_path,
         )
 
     await bin_path.chmod(0o755)
@@ -223,28 +183,23 @@ class ACPAgent:
             f"Agent with ID '{self.agent_id}' not found in registry."
         )
 
-    @overload
-    async def run(self, *, attach: Literal[False] = ...) -> AgentStream: ...
+    async def run(self) -> Process:
+        """Run agent command and return its process handle."""
 
-    @overload
-    async def run(self, *, attach: Literal[True]) -> int: ...
-
-    async def run(self, *, attach: bool = False) -> AgentStream | int:
-        """Run agent command and optionally wait for process completion."""
         cmd = await self.setup()
-        env = {**os.environ, **self.env}
-        if attach:
-            return await run_process(*cmd, env=env, cwd=self.workdir)
-        return await spawn_process(*cmd, env=env, cwd=self.workdir)
 
-    async def connect_client(self, client: Client) -> ClientSideConnection:
-        """Connect to the agent process using ACP protocol."""
-        streams = await self.run(attach=False)
-        return connect_to_agent(
-            client,
-            input_stream=streams.input,
-            output_stream=streams.output,
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            env={**os.environ, **self.dist.env, **self.env},
+            cwd=self.workdir,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
         )
+
+        if process.stdin is None or process.stdout is None:
+            raise RuntimeError("Failed to create subprocess pipes")
+
+        return process
 
     def format_command(self) -> list[str]:
         """Build a runnable command without installing dependencies."""
@@ -303,7 +258,7 @@ class ACPAgent:
             bin_dir=container_settings.bin_dir_path,
             agent_id=self.agent_id,
             npx=isinstance(self.agent.dist, NpxDistribution),
-            env_vars={**env, **self.env},
+            env_vars={**env, **self.dist.env, **self.env},
             workdir=self.workdir,
             mode=mode,
         )
