@@ -10,8 +10,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 DEFAULT_CACHE_PATH = platformdirs.user_cache_path(
     appname="acp-agent", ensure_exists=True
 )
-
 DEFAULT_BIN_DIR_PATH = Path.home() / ".local" / "bin"
+
+DEFAULT_CONTAINER_CACHE_PATH = Path("/") / "tmp" / "acp-agent-cache"
+DEFAULT_CONTAINER_BIN_DIR_PATH = Path("/") / "usr" / "local" / "bin"
 
 
 class Settings(BaseSettings):
@@ -31,6 +33,12 @@ class Settings(BaseSettings):
     """Path to cache directory for storing downloaded binaries."""
 
     bin_dir_path: Path = Field(default=DEFAULT_BIN_DIR_PATH)
+    """Path to directory for storing downloaded binaries. Default is ~/.local/bin."""
 
 
 env_settings: Final = Settings()
+
+
+class ContainerSettings(Settings):
+    bin_dir_path: Path = Field(default=DEFAULT_CONTAINER_BIN_DIR_PATH)
+    """Path to directory for storing downloaded binaries in container. Default is /usr/local/bin."""

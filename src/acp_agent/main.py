@@ -25,7 +25,7 @@ from .registry.model import (
     RegistryAgent,
     UvxDistribution,
 )
-from .settings import Settings, env_settings
+from .settings import ContainerSettings, Settings, env_settings
 from .utils.archive import extract_binary
 from .utils.sh import available_programs
 
@@ -287,22 +287,23 @@ class ACPAgent:
         self,
         containerfile: str,
         *,
-        container_settings: Settings | None = None,
+        container_settings: ContainerSettings | None = None,
         mode: Literal["run", "sleep"] = "run",
     ) -> str:
         """Render a containerfile with command, env vars, and runtime assets."""
 
         if not container_settings:
-            container_settings = Settings()
+            container_settings = ContainerSettings()
 
         env = container_settings.model_dump(mode="json")
         env = {key.upper(): value for key, value in env.items()}
 
         return _containerfile_template.render(
             containerfile=containerfile,
+            bin_dir=container_settings.bin_dir_path,
             agent_id=self.agent_id,
             npx=isinstance(self.agent.dist, NpxDistribution),
             env_vars={**env, **self.env},
-            workdir=str(self.workdir) if self.workdir else None,
+            workdir=self.workdir,
             mode=mode,
         )
