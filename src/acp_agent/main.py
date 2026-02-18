@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import tempfile
 from asyncio import StreamReader, StreamWriter
 from collections.abc import Mapping, Sequence
 from functools import cached_property
@@ -26,7 +25,7 @@ from .registry.model import (
     RegistryAgent,
     UvxDistribution,
 )
-from .settings import SpawnSettings, env_settings
+from .settings import Settings, env_settings
 from .utils.archive import extract_binary
 from .utils.sh import available_programs
 
@@ -86,13 +85,13 @@ async def _prepare_npx(dist: NpxDistribution, extra_args: Sequence[str]) -> list
 async def _prepare_uvx(
     dist: UvxDistribution,
     extra_args: Sequence[str],
-    spawn_settings: SpawnSettings,
+    settings: Settings,
 ) -> list[str]:
     args = [dist.package, *dist.args, *extra_args]
     match await available_programs("uvx", "pip", "pip3"):
         case "uvx":
-            return ["uvx", "--python", spawn_settings.python_version, *args]
-        case "pip" | "pip3" as pip if spawn_settings.allow_pip:
+            return ["uvx", "--python", settings.python_version, *args]
+        case "pip" | "pip3" as pip if settings.allow_pip:
             logger.warning(
                 "Using pip as fallback for uvx. "
                 "This will install the package globally or in the current env."
@@ -109,40 +108,47 @@ async def _prepare_uvx(
 async def _prepare_binary(
     dist: BinaryDistribution,
     extra_args: Sequence[str],
-    settings: SpawnSettings,
+    settings: Settings,
 ) -> list[str]:
-    cache_path = anyio.Path(settings.cache_path)
-    await cache_path.mkdir(parents=True, exist_ok=True)
-    binary_path = cache_path / Path(dist.cmd).name
+    bin_dir_path = anyio.Path(settings.bin_dir_path)
+    if not await bin_dir_path.exists():
+        raise FileNotFoundError(
+            f"Binary directory {settings.bin_dir_path} does not exist."
+        )
 
-    if not await binary_path.exists():
-        logger.info("Downloading binary from {} to {}", dist.archive, binary_path)
+    bin_path = bin_dir_path / Path(dist.cmd).name
 
-        with tempfile.NamedTemporaryFile() as tmp:
-            await _download_archive(dist.archive, Path(tmp.name))
+    expect_cmd = [str(bin_path), *dist.args, *extra_args]
 
-            await asyncio.to_thread(
-                extract_binary,
-                archive_path=tmp.name,
-                binary_name=Path(dist.cmd).name,
-                dest_dir=Path(cache_path),
-            )
+    if await bin_path.exists():
+        logger.info("Binary already exists at {}, skipping download", bin_path)
+        return expect_cmd
 
-        await binary_path.chmod(0o755)
+    logger.info("Downloading binary from {} to {}", dist.archive, bin_path)
 
-    return [str(binary_path), *dist.args, *extra_args]
-
-
-async def _download_archive(url: str, output_path: Path) -> None:
     timeout = httpx.Timeout(connect=30.0, read=120.0, write=120.0, pool=30.0)
+
     async with (
+        anyio.NamedTemporaryFile(delete_on_close=True) as archive_file,
         httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client,
-        client.stream("GET", url) as response,
+        client.stream("GET", dist.archive) as response,
     ):
         response.raise_for_status()
-        async with await anyio.Path(output_path).open("wb") as output:
+        async with await bin_path.open("wb") as output:
             async for chunk in response.aiter_bytes():
                 await output.write(chunk)
+
+        assert isinstance(archive_file.name, str)
+        await asyncio.to_thread(
+            extract_binary,
+            archive_path=Path(archive_file.name),
+            binary_name=Path(dist.cmd).name,
+            dest_dir=Path(bin_dir_path),
+        )
+
+    await bin_path.chmod(0o755)
+
+    return expect_cmd
 
 
 @define
@@ -153,7 +159,7 @@ class ACPAgent:
     extra_args: tuple[str, ...] = field(factory=tuple)
     env: dict[str, str] = field(factory=dict)
     workdir: Path | None = None
-    spawn_settings: SpawnSettings | None = None
+    settings: Settings | None = None
 
     @classmethod
     async def create(
@@ -165,7 +171,7 @@ class ACPAgent:
         extra_args: Sequence[str] = (),
         env: Mapping[str, str] | None = None,
         workdir: str | Path | None = None,
-        spawn_settings: SpawnSettings | None = None,
+        settings: Settings | None = None,
     ) -> Self:
         agent = await fetch_agent(agent_id)
         if not agent:
@@ -197,7 +203,7 @@ class ACPAgent:
             extra_args=tuple(extra_args),
             env=dict(env or {}),
             workdir=Path(workdir) if workdir else None,
-            spawn_settings=spawn_settings or env_settings,
+            settings=settings or env_settings,
         )
 
     @property
@@ -255,22 +261,22 @@ class ACPAgent:
             case NpxDistribution() as npx:
                 return await _prepare_npx(npx, extra_args=self.extra_args)
             case UvxDistribution() as uvx:
-                if not self.spawn_settings:
+                if not self.settings:
                     raise ValueError("Spawn settings are required for uvx distribution")
                 return await _prepare_uvx(
                     uvx,
                     extra_args=self.extra_args,
-                    spawn_settings=self.spawn_settings,
+                    settings=self.settings,
                 )
             case BinaryDistribution() as binary:
-                if not self.spawn_settings:
+                if not self.settings:
                     raise ValueError(
                         "Spawn settings are required for binary distribution"
                     )
                 return await _prepare_binary(
                     binary,
                     extra_args=self.extra_args,
-                    settings=self.spawn_settings,
+                    settings=self.settings,
                 )
             case _:
                 raise DistributionError(
@@ -281,17 +287,22 @@ class ACPAgent:
         self,
         containerfile: str,
         *,
+        container_settings: Settings | None = None,
         mode: Literal["run", "sleep"] = "run",
-        bin_dir: str = "/usr/local/bin",
     ) -> str:
         """Render a containerfile with command, env vars, and runtime assets."""
 
+        if not container_settings:
+            container_settings = Settings()
+
+        env = container_settings.model_dump(mode="json")
+        env = {key.upper(): value for key, value in env.items()}
+
         return _containerfile_template.render(
             containerfile=containerfile,
-            bin_dir=bin_dir,
             agent_id=self.agent_id,
             npx=isinstance(self.agent.dist, NpxDistribution),
-            env_vars=self.env,
+            env_vars={**env, **self.env},
             workdir=str(self.workdir) if self.workdir else None,
             mode=mode,
         )
