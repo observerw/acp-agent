@@ -17,14 +17,16 @@ console: Final = Console()
 
 
 @app.command
-async def setup(agent_id: str) -> None:
-    """Setup an agent locally by its ID (e.g., install dependencies).
-
-    Parameters
-    ----------
-    agent_id
-        The ID of the agent to setup.
-    """
+async def setup(
+    agent_id: Annotated[
+        str,
+        Parameter(
+            help="The ID of the agent to setup.",
+        ),
+    ],
+    /,
+) -> None:
+    """Setup an agent locally by its ID (e.g., install dependencies)."""
 
     agent = await ACPAgent.create(agent_id=agent_id)
     _ = await agent.setup()
@@ -32,28 +34,37 @@ async def setup(agent_id: str) -> None:
 
 @app.command
 async def run(
-    agent_id: str,
-    *extra_args: str,
+    agent_id: Annotated[
+        str,
+        Parameter(
+            help="The ID of the agent to run.",
+        ),
+    ],
+    /,
+    *,
     env: Annotated[
         list[str] | None,
         Parameter(
-            name=["--env", "-e"], help="Environment variables in KEY=VAL format."
+            name=["--env", "-e"],
+            help="Environment variables in KEY=VAL format.",
         ),
     ] = None,
     cwd: Annotated[
         Path | None,
         Parameter(help="Working directory for the agent."),
     ] = None,
+    **kwargs: Annotated[
+        str,
+        Parameter(
+            help="Extra arguments to pass to the start command (e.g., --arg value).",
+        ),
+    ],
 ) -> None:
-    """Run an agent locally by its ID.
+    """Run an agent locally by its ID."""
 
-    Parameters
-    ----------
-    agent_id
-        The ID of the agent to run.
-    extra_args
-        Additional arguments to pass to the agent.
-    """
+    extra_args: list[str] = []
+    for key, value in kwargs.items():
+        extra_args.extend((f"--{key}", value))
 
     agent = await ACPAgent.create(
         agent_id=agent_id,
@@ -69,6 +80,7 @@ async def run(
 @app.command(name="list")
 async def list_agents_cmd() -> None:
     """List all available agents from the registry."""
+
     agents = await list_agents()
     display_agents_table(
         agents,
@@ -78,22 +90,22 @@ async def list_agents_cmd() -> None:
 
 
 @app.command
-async def search(query: str) -> None:
-    """Search for agents in the registry by name or ID.
-
-    Parameters
-    ----------
-    query
-        The search string (fuzzy/substring match).
-    """
+async def search(
+    query: Annotated[
+        str,
+        Parameter(
+            help="The search string to match agent names or IDs (fuzzy/substring match).",
+        ),
+    ],
+) -> None:
+    """Search for agents by name or ID."""
 
     agents = await list_agents()
     query = query.lower()
     filtered_agents = [
-        agent
+        agent  #
         for agent in agents
-        if query in agent.name.lower()  #
-        or query in agent.id.lower()
+        if query in agent.name.lower() or query in agent.id.lower()
     ]
 
     if not filtered_agents:
@@ -113,7 +125,10 @@ async def search(query: str) -> None:
 async def dummy(
     seed: Annotated[
         int | None,
-        Parameter(name=["--seed"], help="Seed for deterministic random responses."),
+        Parameter(
+            name=["--seed"],
+            help="Seed for deterministic random responses.",
+        ),
     ] = None,
 ) -> None:
     """Run a dummy ACP agent for protocol testing."""

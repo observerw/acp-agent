@@ -11,8 +11,9 @@ from acp_agent.registry import RegistryAgent
 def parse_env(env_list: Sequence[str]) -> dict[str, str]:
     def parse(item: str) -> list[str]:
         if "=" not in item:
-            msg = f"Invalid environment variable format '{item}'. Expected KEY=VAL."
-            raise ValueError(msg)
+            raise ValueError(
+                f"Invalid environment variable format '{item}'. Expected KEY=VAL."
+            )
         return item.split("=", 1)
 
     return dict(parse(item) for item in env_list)
