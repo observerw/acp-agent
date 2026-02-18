@@ -40,5 +40,11 @@ env_settings: Final = Settings()
 
 
 class ContainerSettings(Settings):
+    allow_pip: bool = True
+    """Whether to allow pip global installation when uv is not available in container environment. Default is"""
+
+    cache_path: Path = Field(default=DEFAULT_CONTAINER_CACHE_PATH)
+    """Path to cache directory for storing downloaded binaries in container. Default is /tmp/acp-agent-cache."""
+
     bin_dir_path: Path = Field(default=DEFAULT_CONTAINER_BIN_DIR_PATH)
     """Path to directory for storing downloaded binaries in container. Default is /usr/local/bin."""
