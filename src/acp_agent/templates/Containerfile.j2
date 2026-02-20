@@ -1,8 +1,6 @@
 {{ containerfile }}
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx {{ bin_dir }}/
-RUN uvx acp-agent setup {{ agent_id }}
-
 {% if npx -%}
 COPY --from=oven/bun:latest /usr/local/bin/bun* {{ bin_dir }}/
 {%- endif %}
@@ -12,6 +10,8 @@ COPY --from=oven/bun:latest /usr/local/bin/bun* {{ bin_dir }}/
 ENV {{ key }}={{ value }}
 {% endfor %}
 {%- endif %}
+
+RUN uvx acp-agent setup {{ agent_id }}
 
 {% if workdir -%}
 WORKDIR {{ workdir }}
