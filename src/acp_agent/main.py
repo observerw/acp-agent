@@ -252,6 +252,12 @@ class ACPAgent:
         env = container_settings.model_dump(mode="json")
         env = {f"ACP_AGENT_{key.upper()}": value for key, value in env.items()}
 
+        match mode:
+            case "sleep":
+                cmd = ["sleep", "infinity"]
+            case "run":
+                cmd = self.format_command()
+
         return _containerfile_template.render(
             containerfile=containerfile,
             bin_dir=container_settings.bin_dir_path,
@@ -259,5 +265,5 @@ class ACPAgent:
             npx=isinstance(self.agent.dist, NpxDistribution),
             env_vars={**env, **self.dist.env, **self.env},
             workdir=self.workdir,
-            mode=mode,
+            cmd=cmd,
         )

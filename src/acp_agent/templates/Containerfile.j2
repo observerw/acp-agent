@@ -17,8 +17,4 @@ RUN uvx acp-agent setup {{ agent_id }}
 WORKDIR {{ workdir }}
 {%- endif %}
 
-{% if mode == 'sleep' -%}
-CMD ["sleep", "infinity"]
-{% elif mode == 'run' -%}
-CMD ["uvx", "acp-agent", "run", "{{ agent_id }}"]
-{% endif %}
+CMD [{% for part in cmd %}"{{ part }}"{% if not loop.last %}, {% endif %}{% endfor %}]
