@@ -39,7 +39,9 @@ async def _prepare_npx(dist: NpxDistribution, extra_args: Sequence[str]) -> list
         case "npx":
             return ["npx", "-y", *args]
         case _:
-            raise AssertionError
+            raise ValueError(
+                "No available program to run npx package. Please install bunx or npx."
+            )
 
 
 async def _prepare_uvx(
@@ -90,12 +92,10 @@ async def _prepare_binary(
             timeout=httpx.Timeout(connect=30.0, read=120.0, write=120.0, pool=30.0),
             follow_redirects=True,
         ) as client,
-        client.stream("GET", dist.archive) as response,
     ):
+        response = await client.get(dist.archive)
         response.raise_for_status()
-        async for chunk in response.aiter_bytes():
-            await archive_file.write(chunk)
-        await archive_file.flush()
+        await archive_file.write(response.content)
 
         assert isinstance(archive_file.name, str)
 
