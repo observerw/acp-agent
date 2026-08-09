@@ -1,5 +1,14 @@
 # ACP Agent CLI & SDK
 
+> # ⚠️ DEPRECATED / 已废弃
+>
+> **This project is deprecated and is no longer maintained.**
+>
+> **Use [`OpenInsightDev/acp-agent`](https://github.com/OpenInsightDev/acp-agent) instead** — it is the actively maintained successor and provides significantly better feature support, including agent discovery, installation, cache management, running, and HTTP/WebSocket serving of [ACP](https://agentclientprotocol.com/) agents as both a CLI and a Rust library.
+>
+> **请改用 [`OpenInsightDev/acp-agent`](https://github.com/OpenInsightDev/acp-agent)：**
+> `https://github.com/OpenInsightDev/acp-agent`
+
 [![PyPI version](https://img.shields.io/pypi/v/acp-agent.svg)](https://pypi.org/project/acp-agent/)
 [![Python versions](https://img.shields.io/pypi/pyversions/acp-agent.svg)](https://pypi.org/project/acp-agent/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
